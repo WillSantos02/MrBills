@@ -4,12 +4,18 @@ namespace App\Models;
 
 use App\Enums\BillStatus;
 use Carbon\Carbon;
+use Database\Factories\BillFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Bill extends Model
 {
+    /** @use HasFactory<BillFactory> */
+    use HasFactory;
+
     protected $fillable = [
         'user_id',
         'description',
@@ -31,11 +37,17 @@ class Bill extends Model
         'status' => BillStatus::class,
     ];
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * @return BelongsTo<Category, $this>
+     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
@@ -43,9 +55,7 @@ class Bill extends Model
 
     public function getEffectiveStatusAttribute(): BillStatus
     {
-        if ($this->status === BillStatus::Pendente
-            && $this->actual_due_date
-            && $this->actual_due_date->isPast()) {
+        if ($this->status === BillStatus::Pendente && $this->actual_due_date->isPast()) {
             return BillStatus::Vencido;
         }
 
@@ -61,15 +71,21 @@ class Bill extends Model
         return "{$this->description} - {$this->current_installments}/{$this->total_installments}";
     }
 
+    /**
+     * @return HasMany<self, $this>
+     */
     public function siblings(): HasMany
     {
         return $this->hasMany(self::class, 'recurrence_group_id', 'recurrence_group_id');
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
     public static function createRecurrent(array $data): self
     {
         $totalInstallments = max(1, (int) ($data['total_installments'] ?? 1));
-        $groupId = (string) \Illuminate\Support\Str::uuid();
+        $groupId = (string) Str::uuid();
         $baseDueDate = Carbon::parse($data['due_date']);
 
         $firstBill = null;
@@ -98,15 +114,13 @@ class Bill extends Model
         parent::boot();
 
         static::saving(function (Bill $bill) {
-            if ($bill->due_date) {
-                $actualDate = Carbon::parse($bill->due_date);
+            $actualDate = Carbon::parse($bill->due_date);
 
-                if ($actualDate->isWeekend()) {
-                    $actualDate->next(Carbon::MONDAY);
-                }
-
-                $bill->actual_due_date = $actualDate->toDateString();
+            if ($actualDate->isWeekend()) {
+                $actualDate->next(Carbon::MONDAY);
             }
+
+            $bill->actual_due_date = $actualDate->toImmutable();
         });
     }
 }

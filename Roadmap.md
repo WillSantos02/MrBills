@@ -1,5 +1,30 @@
 # Roadmap de Novas Funcionalidades
 
+> Este arquivo é a fonte de verdade sobre o status do projeto e o que vem a seguir. O histórico das fases 1–7
+> (CRUD de Contas, Categorias, Carteira e Dashboard, já entregues) fica em `projeto_mrbills.md`; a partir daqui,
+> tanto débito técnico resolvido quanto novas features entram aqui, para não espalhar essa informação em vários
+> arquivos.
+
+---
+
+## Concluído — Cobertura de Testes e Débito Técnico de Tipagem
+
+* **Testes automatizados de regras de negócio**: `tests/Feature/{Bill,Income,Category,IncomeCategory}Test.php`
+  e `tests/Feature/Livewire/ListBillsFilterTest.php` cobrem o rollover de vencimento em fim de semana, o
+  status "Vencido" derivado (nunca persistido), a geração de recorrência/parcelamento (`createRecurrent`),
+  `siblings()` e os totais de `scopeWithTotals()`. Antes só havia testes de autenticação/configurações do
+  starter kit. Foram criadas factories para `Bill`, `Income`, `Category` e `IncomeCategory` (só `User` tinha).
+* **`composer types:check` (PHPStan nível 7) zerado**: eram 19 erros pré-existentes, resolvidos com PHPDoc de
+  generics nas relações (`BelongsTo`/`HasMany`) e nos `scopeWithTotals()`, mais dois bugs reais corrigidos em
+  `Bill.php` — uma checagem sempre-verdadeira (`due_date`/`actual_due_date` são `NOT NULL`, então os guards
+  eram código morto) e uma atribuição de `string` a um atributo tipado `CarbonImmutable` (o app usa
+  `Date::use(CarbonImmutable::class)` globalmente).
+
+Essa base deixa o projeto pronto para a Central de Notificações (próximo item da ordem recomendada abaixo),
+que depende de `actual_due_date` estar correto.
+
+---
+
 ## Feature 1 — Cartões de Crédito
 
 ### Objetivo
@@ -224,6 +249,7 @@ A notificação deverá conter dois botões:
 
 # Ordem Recomendada de Desenvolvimento
 
+0. ~~Cobertura de testes automatizados e débito de tipagem (PHPStan)~~ — concluído, ver seção acima.
 1. Central de Notificações
 2. Convites para Família
 3. Compartilhamento de dados da Família

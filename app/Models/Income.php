@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Carbon\Carbon;
+use Database\Factories\IncomeFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -10,6 +12,9 @@ use Illuminate\Support\Str;
 
 class Income extends Model
 {
+    /** @use HasFactory<IncomeFactory> */
+    use HasFactory;
+
     protected $fillable = [
         'user_id',
         'income_category_id',
@@ -27,11 +32,17 @@ class Income extends Model
         'is_recurrent' => 'boolean',
     ];
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * @return BelongsTo<IncomeCategory, $this>
+     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(IncomeCategory::class, 'income_category_id');
@@ -39,6 +50,8 @@ class Income extends Model
 
     /**
      * Todos os lançamentos do mesmo grupo de recorrência.
+     *
+     * @return HasMany<self, $this>
      */
     public function siblings(): HasMany
     {
@@ -61,6 +74,8 @@ class Income extends Model
     /**
      * Pré-gera todos os lançamentos de uma entrada recorrente de uma só vez,
      * no mesmo padrão de Bill::createRecurrent().
+     *
+     * @param  array<string, mixed>  $data
      */
     public static function createRecurrent(array $data): self
     {

@@ -5,8 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 Mr. Bills — a personal finance manager focused on bill (contas a pagar) tracking, with automatic due-date
-recalculation for weekends and recurring/installment billing. See `projeto_mrbills.md` for the (Portuguese)
-project scope doc and development-phase log; keep it updated as new phases land.
+recalculation for weekends and recurring/installment billing. `projeto_mrbills.md` (Portuguese) is the
+historical scope doc and phase log for phases 1–7 (already shipped: bills/categories/wallet CRUD + dashboard).
+`Roadmap.md` (also Portuguese) is the **single source of truth for current status and what's next** — planned
+features (credit cards/invoices, shared "family" accounts, notification center) and completed
+technical-debt work are tracked there; check it before designing new work or answering "what's next".
 
 Stack: PHP 8.5 / Laravel 13, Livewire v4 (functional/Volt-style single-file components), Tailwind CSS v4,
 Flux UI, PostgreSQL 18 via Laravel Sail (Docker). Local `.env` runs against the `pgsql` Sail service
@@ -71,6 +74,14 @@ component (see `⚡list-bills.blade.php::applyStatusFilter`) must reconstruct th
 **Category totals**: `Category`/`IncomeCategory` expose a `scopeWithTotals()` query scope using `withSum` to
 attach `total_geral` and `total_mes_atual` aggregates without N+1 queries — reuse this instead of summing in
 PHP when a listing needs per-category totals.
+
+**Test coverage**: `Bill`, `Income`, `Category`, `IncomeCategory` each have a factory
+(`database/factories/`) and Feature tests (`tests/Feature/{Bill,Income,Category,IncomeCategory}Test.php`,
+`tests/Feature/Livewire/ListBillsFilterTest.php`) covering weekend rollover, derived "Vencido" status,
+`createRecurrent`/`siblings()`, and `scopeWithTotals()` — using `RefreshDatabase` against the real Postgres
+Sail service, no sqlite/mocking. `composer types:check` (PHPStan level 7) is currently clean (0 errors); keep
+it that way by annotating new Eloquent relations/scopes with generics the way the existing models do
+(`BelongsTo<Related, $this>`, `HasMany<Related, $this>`, `Builder<Model>`).
 
 ## Notable non-obvious files
 
