@@ -60,6 +60,31 @@ Detalhes de uso em `CLAUDE.md` (seções "Local environment (Traefik + HTTPS)" e
 
 ---
 
+## Concluído — Central de Notificações (contas a vencer) + Processamento Assíncrono (RabbitMQ)
+
+* **RabbitMQ como fila real da aplicação**: novo serviço `rabbitmq` (`compose.yaml`, sem porta pública —
+  só acessível pela rede `sail`; AMQP + UI de management em `localhost:5672`/`15672` só em dev, via
+  `compose.override.yaml`), driver `vladimir-yuldashev/laravel-queue-rabbitmq` (`config/queue.php`),
+  `QUEUE_CONNECTION=rabbitmq` no `.env`. Em produção, `worker` (`php artisan queue:work rabbitmq`) e
+  `scheduler` (`php artisan schedule:work`) são serviços dedicados com `restart: unless-stopped`
+  (`compose.prod.yaml`); em dev, os dois já vêm de graça no `composer dev` (o scheduler foi adicionado à
+  lista via `DevCommands::artisan('schedule:work', ...)` em `AppServiceProvider::boot()`).
+* **Notificações de "conta a vencer"** (primeiro caso de uso real da fila): usa o sistema nativo de
+  notificações do Laravel (`User` já tinha `Notifiable`), não um model customizado. Sino + badge em
+  `⚡notification-center.blade.php`, incluído duas vezes em `layouts/app/sidebar.blade.php`
+  (desktop/mobile). `App\Notifications\BillDueSoonNotification` é `ShouldQueue` — passa pelo RabbitMQ de
+  verdade. Comando diário `notifications:send-bill-due-soon` (agendado 08:00 em `bootstrap/app.php`)
+  notifica contas `Pendente` com vencimento em 0–3 dias; dedupe é feito por uma coluna
+  (`bills.last_due_soon_notified_at`), não consultando a tabela `notifications`, já que a notificação é
+  assíncrona e essa linha pode não existir ainda no momento em que o comando termina. "Marcar como pago"
+  atualiza a conta e marca a notificação como lida; "Lembrar depois" só marca como lida — no dia seguinte
+  o comando roda de novo e, como a coluna de dedupe ficou desatualizada, notifica de novo.
+* **Escopo**: só a parte de "contas a vencer" da Feature 3 abaixo. "Notificações de Convite" continuam
+  pendentes — dependem da Feature 2 (Família) ainda não implementada; a estrutura do sino/badge já está
+  pronta para reutilização quando esse convite existir.
+
+---
+
 ## Feature 1 — Cartões de Crédito
 
 ### Objetivo
@@ -217,6 +242,9 @@ Caso o usuário recuse:
 
 # Feature 3 — Central de Notificações
 
+> **Status**: sino/badge e "Notificações de Contas a Vencer" implementados — ver seção "Concluído" acima.
+> Falta só "Notificações de Convite" abaixo, que depende da Feature 2 (Família).
+
 ## Objetivo
 
 Implementar uma central de notificações acessível através de um ícone de sino na barra superior da aplicação.
@@ -286,9 +314,10 @@ A notificação deverá conter dois botões:
 
 0. ~~Cobertura de testes automatizados e débito de tipagem (PHPStan)~~ — concluído, ver seção acima.
 0. ~~Traefik (reverse proxy, HTTPS local, preparo para deploy)~~ — concluído, ver seção acima.
-1. Central de Notificações
-2. Convites para Família
-3. Compartilhamento de dados da Família
-4. Módulo de Cartões de Crédito
-5. Geração automática de Faturas
-6. Integração das Faturas com a tela de Despesas
+0. ~~RabbitMQ (fila real) + Central de Notificações — parte "contas a vencer"~~ — concluído, ver seção
+   acima. Falta só "Notificações de Convite", que depende da Feature 2.
+1. Convites para Família (inclui "Notificações de Convite", completando a Feature 3)
+2. Compartilhamento de dados da Família
+3. Módulo de Cartões de Crédito
+4. Geração automática de Faturas
+5. Integração das Faturas com a tela de Despesas

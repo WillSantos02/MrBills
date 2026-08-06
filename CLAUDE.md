@@ -12,10 +12,11 @@ features (credit cards/invoices, shared "family" accounts, notification center) 
 technical-debt work are tracked there; check it before designing new work or answering "what's next".
 
 Stack: PHP 8.5 / Laravel 13, Livewire v4 (functional/Volt-style single-file components), Tailwind CSS v4,
-Flux UI, PostgreSQL 18 via Laravel Sail (Docker), Traefik as reverse proxy/TLS termination. Local `.env` runs
-against the `pgsql` Sail service (`DB_CONNECTION=pgsql`), not sqlite, despite `.env.example` defaulting to
-sqlite. The Sail app container is named `core` (`APP_SERVICE=core` in `.env`), not the Sail default
-`laravel.test` — `vendor/bin/sail` reads `APP_SERVICE` so all `sail ...` subcommands target it transparently.
+Flux UI, PostgreSQL 18 via Laravel Sail (Docker), Traefik as reverse proxy/TLS termination, RabbitMQ as the
+real queue backend (`QUEUE_CONNECTION=rabbitmq`). Local `.env` runs against the `pgsql` Sail service
+(`DB_CONNECTION=pgsql`), not sqlite, despite `.env.example` defaulting to sqlite. The Sail app container is
+named `core` (`APP_SERVICE=core` in `.env`), not the Sail default `laravel.test` — `vendor/bin/sail` reads
+`APP_SERVICE` so all `sail ...` subcommands target it transparently.
 
 ## Commands
 
@@ -32,7 +33,10 @@ php artisan test tests/Feature/DashboardTest.php    # run a single file
 ```
 
 Frontend assets: `npm run dev` (Vite dev server) / `npm run build`. `composer dev` runs `php artisan dev`
-(concurrently serves app, queue listener, and Vite).
+(concurrently serves app, queue listener against RabbitMQ, the Laravel scheduler loop, and Vite — the
+scheduler process is registered by `AppServiceProvider::boot()` via `DevCommands::artisan('schedule:work',
+...)`, so scheduled commands like `notifications:send-bill-due-soon` actually run locally without a separate
+manual step or cron).
 
 CI (`.github/workflows/`) runs `composer lint` (Pint) and, per PHP version 8.3/8.4/8.5, `composer types:check`
 + `php artisan test`.
@@ -58,8 +62,10 @@ certs into Traefik, none of which apply in production.
 
 `compose.prod.yaml` is an explicit overlay (not auto-loaded) for a real VPS deploy: `restart: unless-stopped`
 on all services, and switches the `core` Traefik router to the `letsencrypt` certificate resolver (HTTP-01
-challenge, defined in `docker/traefik/traefik.yml`) instead of the local mkcert certificate. Requires
-`APP_DOMAIN` set to the real public domain and `ACME_EMAIL` set in `.env`:
+challenge, defined in `docker/traefik/traefik.yml`) instead of the local mkcert certificate. It also adds two
+always-on services that dev gets for free via `composer dev`'s process list: `worker` (`php artisan
+queue:work rabbitmq ...`) and `scheduler` (`php artisan schedule:work`) — both share `core`'s image/code
+mount. Requires `APP_DOMAIN` set to the real public domain and `ACME_EMAIL` set in `.env`:
 
 ```bash
 docker compose -f compose.yaml -f compose.prod.yaml up -d --build
@@ -105,12 +111,29 @@ component (see `⚡list-bills.blade.php::applyStatusFilter`) must reconstruct th
 attach `total_geral` and `total_mes_atual` aggregates without N+1 queries — reuse this instead of summing in
 PHP when a listing needs per-category totals.
 
+**Notification center**: uses Laravel's built-in notifications (`User` has `Notifiable`; `notifications`
+table via `php artisan notifications:table`), not a custom model — the bell/badge UI
+(`⚡notification-center.blade.php`, included twice in `layouts/app/sidebar.blade.php` for desktop/mobile,
+same duplication pattern as the user menu there) reads `auth()->user()->unreadNotifications()`.
+`App\Notifications\BillDueSoonNotification` implements `ShouldQueue`, so sending one actually round-trips
+through RabbitMQ. The scheduled command `App\Console\Commands\SendBillDueSoonNotifications`
+(`notifications:send-bill-due-soon`, registered daily at 08:00 in `bootstrap/app.php`) notifies `Pendente`
+bills with `actual_due_date` 0–3 days out. Dedup is **not** done by querying the `notifications` table —
+since the notification is queued, that row may not exist yet by the time the command finishes. Instead
+`Bill::last_due_soon_notified_at` (a plain date column) is stamped synchronously right after dispatch;
+"Lembrar depois" only marks the notification read (leaves the bill/column untouched), so the next day's run
+naturally re-notifies since the column is stale — that's the entire "remind me tomorrow" mechanism, no
+separate snooze state.
+
 **Test coverage**: `Bill`, `Income`, `Category`, `IncomeCategory` each have a factory
 (`database/factories/`) and Feature tests (`tests/Feature/{Bill,Income,Category,IncomeCategory}Test.php`,
 `tests/Feature/Livewire/ListBillsFilterTest.php`) covering weekend rollover, derived "Vencido" status,
-`createRecurrent`/`siblings()`, and `scopeWithTotals()` — using `RefreshDatabase` against the real Postgres
-Sail service, no sqlite/mocking. `composer types:check` (PHPStan level 7) is currently clean (0 errors); keep
-it that way by annotating new Eloquent relations/scopes with generics the way the existing models do
+`createRecurrent`/`siblings()`, and `scopeWithTotals()`; `tests/Feature/SendBillDueSoonNotificationsTest.php`
+and `tests/Feature/Livewire/NotificationCenterTest.php` cover the notification window/dedup rules and the
+bell's actions — all using `RefreshDatabase` against the real Postgres Sail service, no sqlite/mocking.
+`phpunit.xml` forces `QUEUE_CONNECTION=sync`, so `ShouldQueue` notifications still execute inline during
+tests (no RabbitMQ dependency in CI). `composer types:check` (PHPStan level 7) is currently clean (0 errors);
+keep it that way by annotating new Eloquent relations/scopes with generics the way the existing models do
 (`BelongsTo<Related, $this>`, `HasMany<Related, $this>`, `Builder<Model>`).
 
 ## Notable non-obvious files
@@ -134,3 +157,9 @@ it that way by annotating new Eloquent relations/scopes with generics the way th
 `X-Forwarded-Proto`/`-Host`/`-Port`/`-For` headers Traefik sets — without this, asset/URL generation silently
 falls back to `http://` even though the app is only ever reached over HTTPS. Safe to trust `*` here because
 Traefik is the sole entrypoint into the `sail` Docker network; nothing else is reachable from outside it.
+
+- `config/queue.php`'s `rabbitmq` connection (added on top of Laravel's stock file, package
+  `vladimir-yuldashev/laravel-queue-rabbitmq`) is not in Laravel's own driver list — it's registered by that
+  package's auto-discovered service provider. The RabbitMQ container has no published ports in
+  `compose.yaml`/`compose.prod.yaml` (only reachable on the internal `sail` network); the AMQP port and the
+  management UI (`http://localhost:15672`) are dev-only forwards in `compose.override.yaml`.
