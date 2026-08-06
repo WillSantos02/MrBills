@@ -5,6 +5,10 @@ services:
     pgsql:
         ports:
             - '${FORWARD_DB_PORT:-5432}:5432'
+    rabbitmq:
+        ports:
+            - '${FORWARD_RABBITMQ_PORT:-5672}:5672'
+            - '${FORWARD_RABBITMQ_DASHBOARD_PORT:-15672}:15672'
     traefik:
         volumes:
             - './docker/traefik/dynamic.dev:/etc/traefik/dynamic:ro'

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +25,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        // Adds the Laravel scheduler loop to `composer dev`'s process list (alongside
+        // serve/queue/vite), so scheduled commands like notifications:send-bill-due-soon
+        // actually run locally without a separate manual step.
+        DevCommands::artisan('schedule:work', 'scheduler');
     }
 
     /**

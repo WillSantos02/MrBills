@@ -20,6 +20,7 @@ services:
             - sail
         depends_on:
             - pgsql
+            - rabbitmq
         labels:
             traefik.enable: 'true'
             traefik.http.routers.core.rule: 'Host(`${APP_DOMAIN}`)'
@@ -49,6 +50,26 @@ services:
                 - '${DB_USERNAME}'
             retries: 3
             timeout: 5s
+    rabbitmq:
+        image: 'rabbitmq:4-management-alpine'
+        hostname: 'rabbitmq'
+        environment:
+            RABBITMQ_HOST: '%'
+            RABBITMQ_DEFAULT_USER: '${RABBITMQ_USER}'
+            RABBITMQ_DEFAULT_PASS: '${RABBITMQ_PASSWORD}'
+            RABBITMQ_DEFAULT_VHOST: '${RABBITMQ_VHOST:-/}'
+        volumes:
+            - 'sail-rabbitmq:/var/lib/rabbitmq'
+        networks:
+            - sail
+        healthcheck:
+            test:
+                - CMD
+                - rabbitmq-diagnostics
+                - '-q'
+                - ping
+            retries: 3
+            timeout: 5s
     traefik:
         image: 'traefik:v3.6'
         command:
@@ -69,6 +90,8 @@ networks:
         driver: bridge
 volumes:
     sail-pgsql:
+        driver: local
+    sail-rabbitmq:
         driver: local
     traefik-certs:
         driver: local
