@@ -1,0 +1,12 @@
+services:
+    core:
+        restart: unless-stopped
+        labels:
+            traefik.http.routers.core.tls.certresolver: 'letsencrypt'
+    pgsql:
+        restart: unless-stopped
+    traefik:
+        restart: unless-stopped
+        command:
+            - '--configFile=/etc/traefik/traefik.yml'
+            - '--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}'

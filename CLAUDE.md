@@ -12,8 +12,10 @@ features (credit cards/invoices, shared "family" accounts, notification center) 
 technical-debt work are tracked there; check it before designing new work or answering "what's next".
 
 Stack: PHP 8.5 / Laravel 13, Livewire v4 (functional/Volt-style single-file components), Tailwind CSS v4,
-Flux UI, PostgreSQL 18 via Laravel Sail (Docker). Local `.env` runs against the `pgsql` Sail service
-(`DB_CONNECTION=pgsql`), not sqlite, despite `.env.example` defaulting to sqlite.
+Flux UI, PostgreSQL 18 via Laravel Sail (Docker), Traefik as reverse proxy/TLS termination. Local `.env` runs
+against the `pgsql` Sail service (`DB_CONNECTION=pgsql`), not sqlite, despite `.env.example` defaulting to
+sqlite. The Sail app container is named `core` (`APP_SERVICE=core` in `.env`), not the Sail default
+`laravel.test` — `vendor/bin/sail` reads `APP_SERVICE` so all `sail ...` subcommands target it transparently.
 
 ## Commands
 
@@ -34,6 +36,34 @@ Frontend assets: `npm run dev` (Vite dev server) / `npm run build`. `composer de
 
 CI (`.github/workflows/`) runs `composer lint` (Pint) and, per PHP version 8.3/8.4/8.5, `composer types:check`
 + `php artisan test`.
+
+### Local environment (Traefik + HTTPS)
+
+The `core` container no longer publishes port 80 directly — Traefik fronts it and terminates TLS. One-time
+setup per dev machine:
+
+```bash
+sudo apt-get install -y mkcert   # or another mkcert install method
+mkcert -install                  # trust mkcert's local CA (repeat on Windows too if browsing from WSL2)
+docker/traefik/generate-dev-certs.sh   # generates docker/traefik/certs/mrbills.localhost*.pem
+sail up -d
+```
+
+App is then reachable at `https://mrbills.localhost` (`APP_DOMAIN` in `.env`; `*.localhost` resolves to
+`127.0.0.1` without editing `/etc/hosts`). `docker compose` auto-loads `compose.override.yaml` alongside
+`compose.yaml` for `sail`/plain dev use — it adds the Vite/Postgres host port mappings and mounts the mkcert
+certs into Traefik, none of which apply in production.
+
+### Production deploy
+
+`compose.prod.yaml` is an explicit overlay (not auto-loaded) for a real VPS deploy: `restart: unless-stopped`
+on all services, and switches the `core` Traefik router to the `letsencrypt` certificate resolver (HTTP-01
+challenge, defined in `docker/traefik/traefik.yml`) instead of the local mkcert certificate. Requires
+`APP_DOMAIN` set to the real public domain and `ACME_EMAIL` set in `.env`:
+
+```bash
+docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+```
 
 ## Architecture
 
@@ -90,3 +120,17 @@ it that way by annotating new Eloquent relations/scopes with generics the way th
   `composer create-project` time). Not part of the app's runtime; safe to ignore during feature work.
 - `phpstan.neon`: level 7, includes Larastan + Carbon extensions, scoped to `app/`, `bootstrap/app.php`,
   `config/`, `database/`, `routes/`.
+- `docker/traefik/`: Traefik config. `traefik.yml` is the static config (entrypoints, providers, the
+  `letsencrypt` certificate resolver skeleton — email is injected via CLI flag in `compose.prod.yaml`, not
+  hardcoded here since Traefik's static config file doesn't expand env vars). `dynamic.dev/tls.yml` sets the
+  mkcert-generated cert as the default local TLS certificate and is only mounted in dev
+  (`compose.override.yaml`). `certs/` holds the machine-generated mkcert `.pem` files (gitignored — regenerate
+  with `generate-dev-certs.sh`, don't commit them). Pin the Traefik image to `v3.6+` — earlier v3.x releases
+  hardcode the Docker API client at v1.24 and get rejected (`400`, silently — the Docker provider never
+  discovers `core`, so every request 404s) by Docker Engine 29+, which requires API v1.40+
+  ([traefik/traefik#12253](https://github.com/traefik/traefik/issues/12253)).
+
+**`bootstrap/app.php` trusts all proxies** (`$middleware->trustProxies(at: '*', ...)`) so Laravel reads the
+`X-Forwarded-Proto`/`-Host`/`-Port`/`-For` headers Traefik sets — without this, asset/URL generation silently
+falls back to `http://` even though the app is only ever reached over HTTPS. Safe to trust `*` here because
+Traefik is the sole entrypoint into the `sail` Docker network; nothing else is reachable from outside it.

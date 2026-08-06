@@ -25,6 +25,41 @@ que depende de `actual_due_date` estar correto.
 
 ---
 
+## Concluído — Traefik (reverse proxy + HTTPS local + preparo para deploy)
+
+* **Container da aplicação renomeado**: de `laravel.test` (padrão do Sail) para `core`, via `APP_SERVICE=core`
+  no `.env` — `vendor/bin/sail` respeita essa variável, então os comandos `sail ...` continuam funcionando sem
+  mudança de uso.
+* **Sem porta HTTP exposta diretamente**: `core` não publica mais porta no host; o Traefik assume a borda
+  (80/443) e roteia por domínio (`APP_DOMAIN`, label `traefik.http.routers.core.rule=Host(...)`) via Docker
+  provider.
+* **HTTPS local com domínio próprio**: `https://mrbills.localhost` (sufixo `.localhost` resolve para
+  `127.0.0.1` sem precisar editar `/etc/hosts`), com certificado confiável gerado via mkcert
+  (`docker/traefik/generate-dev-certs.sh`), carregado só em dev via `compose.override.yaml` (auto-carregado
+  pelo `docker compose`/`sail`).
+* **Preparado para deploy real em VPS**: `compose.prod.yaml` é um overlay explícito (`docker compose -f
+  compose.yaml -f compose.prod.yaml up -d`) que troca o certificado para o resolver `letsencrypt` (desafio
+  HTTP-01, config em `docker/traefik/traefik.yml`) e adiciona `restart: unless-stopped` aos serviços. Requer
+  `APP_DOMAIN` com o domínio público real e `ACME_EMAIL` preenchido no `.env` do servidor.
+
+Detalhes de uso em `CLAUDE.md` (seções "Local environment (Traefik + HTTPS)" e "Production deploy").
+
+**Correções pós-implantação (404 no primeiro boot)**:
+* `traefik:v3.3`/`v3.5` fixam o cliente Docker na API v1.24; Docker Engine 29+ passou a exigir mínimo v1.40 e
+  rejeita essas chamadas com 400, então o provider Docker do Traefik nunca descobria o container `core` e todo
+  request caía no 404 padrão. Corrigido subindo para `traefik:v3.6` (primeira versão com auto-negociação real
+  da API do Docker — [traefik/traefik#12253](https://github.com/traefik/traefik/issues/12253)).
+* `bootstrap/app.php` não confiava em proxies reversos, então o Laravel não via o `X-Forwarded-Proto: https`
+  enviado pelo Traefik e gerava URLs de asset como `http://` mesmo servindo por HTTPS. Corrigido com
+  `$middleware->trustProxies(at: '*', ...)` — seguro aqui porque o Traefik é o único ponto de entrada da rede
+  `sail`, os demais serviços não são expostos publicamente.
+* No Docker Desktop com WSL2, montar um diretório inteiro (`dynamic/`) e depois um arquivo dentro dele em
+  outro compose file (mount aninhado) fez o conteúdo do arquivo vazar de volta pro host, no diretório
+  compartilhado com produção. Corrigido montando `docker/traefik/dynamic.dev/` como diretório único (sem
+  aninhamento) só em `compose.override.yaml`; não há mais diretório `dynamic/` compartilhado entre dev/prod.
+
+---
+
 ## Feature 1 — Cartões de Crédito
 
 ### Objetivo
@@ -250,6 +285,7 @@ A notificação deverá conter dois botões:
 # Ordem Recomendada de Desenvolvimento
 
 0. ~~Cobertura de testes automatizados e débito de tipagem (PHPStan)~~ — concluído, ver seção acima.
+0. ~~Traefik (reverse proxy, HTTPS local, preparo para deploy)~~ — concluído, ver seção acima.
 1. Central de Notificações
 2. Convites para Família
 3. Compartilhamento de dados da Família

@@ -1,5 +1,5 @@
 services:
-    laravel.test:
+    core:
         build:
             context: './vendor/laravel/sail/runtimes/8.5'
             dockerfile: Dockerfile
@@ -8,9 +8,6 @@ services:
         image: 'sail-8.5/app'
         extra_hosts:
             - 'host.docker.internal:host-gateway'
-        ports:
-            - '${APP_PORT:-80}:80'
-            - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
         environment:
             WWWUSER: '${WWWUSER}'
             LARAVEL_SAIL: 1
@@ -23,10 +20,14 @@ services:
             - sail
         depends_on:
             - pgsql
+        labels:
+            traefik.enable: 'true'
+            traefik.http.routers.core.rule: 'Host(`${APP_DOMAIN}`)'
+            traefik.http.routers.core.entrypoints: 'websecure'
+            traefik.http.routers.core.tls: 'true'
+            traefik.http.services.core.loadbalancer.server.port: '80'
     pgsql:
         image: 'postgres:18-alpine'
-        ports:
-            - '${FORWARD_DB_PORT:-5432}:5432'
         environment:
             PGPASSWORD: '${DB_PASSWORD:-secret}'
             POSTGRES_DB: '${DB_DATABASE}'
@@ -48,9 +49,26 @@ services:
                 - '${DB_USERNAME}'
             retries: 3
             timeout: 5s
+    traefik:
+        image: 'traefik:v3.6'
+        command:
+            - '--configFile=/etc/traefik/traefik.yml'
+        ports:
+            - '80:80'
+            - '443:443'
+        volumes:
+            - './docker/traefik/traefik.yml:/etc/traefik/traefik.yml:ro'
+            - '/var/run/docker.sock:/var/run/docker.sock:ro'
+            - 'traefik-certs:/letsencrypt'
+        networks:
+            - sail
+        depends_on:
+            - core
 networks:
     sail:
         driver: bridge
 volumes:
     sail-pgsql:
+        driver: local
+    traefik-certs:
         driver: local

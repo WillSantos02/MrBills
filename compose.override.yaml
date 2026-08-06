@@ -1,0 +1,11 @@
+services:
+    core:
+        ports:
+            - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
+    pgsql:
+        ports:
+            - '${FORWARD_DB_PORT:-5432}:5432'
+    traefik:
+        volumes:
+            - './docker/traefik/dynamic.dev:/etc/traefik/dynamic:ro'
+            - './docker/traefik/certs:/certs:ro'
