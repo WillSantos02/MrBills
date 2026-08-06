@@ -28,11 +28,13 @@ class Bill extends Model
         'recurrence_group_id',
         'status',
         'category_id',
+        'last_due_soon_notified_at',
     ];
 
     protected $casts = [
         'due_date' => 'date',
         'actual_due_date' => 'date',
+        'last_due_soon_notified_at' => 'date',
         'is_recurrent' => 'boolean',
         'status' => BillStatus::class,
     ];
