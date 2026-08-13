@@ -2,6 +2,10 @@
 
 use App\Enums\BillStatus;
 use App\Models\Bill;
+use App\Models\FamilyInvite;
+use App\Models\User;
+use App\Notifications\FamilyInviteAcceptedNotification;
+use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 
 new class extends Component
@@ -30,6 +34,54 @@ new class extends Component
     public function remindLater(string $notificationId): void
     {
         auth()->user()->notifications()->findOrFail($notificationId)->markAsRead();
+    }
+
+    public function acceptInvite(string $notificationId): void
+    {
+        $notification = auth()->user()->notifications()->findOrFail($notificationId);
+
+        $invite = FamilyInvite::where('invited_user_id', auth()->id())
+            ->find($notification->data['family_invite_id']);
+
+        if ($invite === null) {
+            $notification->delete();
+
+            return;
+        }
+
+        DB::transaction(function () use ($invite) {
+            $owner = User::whereKey($invite->owner_id)->lockForUpdate()->first();
+
+            if ($owner->familyMembers()->count() >= 2) {
+                $invite->delete();
+
+                return;
+            }
+
+            auth()->user()->update(['family_owner_id' => $owner->id]);
+            FamilyInvite::where('owner_id', auth()->id())->delete();
+            $invite->delete();
+
+            $owner->notify(new FamilyInviteAcceptedNotification(auth()->user()));
+        });
+
+        $notification->delete();
+    }
+
+    public function rejectInvite(string $notificationId): void
+    {
+        $notification = auth()->user()->notifications()->findOrFail($notificationId);
+
+        FamilyInvite::where('invited_user_id', auth()->id())
+            ->where('id', $notification->data['family_invite_id'])
+            ->delete();
+
+        $notification->delete();
+    }
+
+    public function dismiss(string $notificationId): void
+    {
+        auth()->user()->notifications()->findOrFail($notificationId)->delete();
     }
 };
 ?>
@@ -62,12 +114,25 @@ new class extends Component
                     </p>
 
                     <div class="flex gap-2">
-                        <flux:button size="sm" variant="primary" wire:click="markBillAsPaid('{{ $notification->id }}')">
-                            {{ __('Marcar como pago') }}
-                        </flux:button>
-                        <flux:button size="sm" variant="ghost" wire:click="remindLater('{{ $notification->id }}')">
-                            {{ __('Lembrar depois') }}
-                        </flux:button>
+                        @if ($notification->type === \App\Notifications\BillDueSoonNotification::class)
+                            <flux:button size="sm" variant="primary" wire:click="markBillAsPaid('{{ $notification->id }}')">
+                                {{ __('Marcar como pago') }}
+                            </flux:button>
+                            <flux:button size="sm" variant="ghost" wire:click="remindLater('{{ $notification->id }}')">
+                                {{ __('Lembrar depois') }}
+                            </flux:button>
+                        @elseif ($notification->type === \App\Notifications\FamilyInviteNotification::class)
+                            <flux:button size="sm" variant="primary" wire:click="acceptInvite('{{ $notification->id }}')">
+                                {{ __('Aceitar') }}
+                            </flux:button>
+                            <flux:button size="sm" variant="danger" wire:click="rejectInvite('{{ $notification->id }}')">
+                                {{ __('Recusar') }}
+                            </flux:button>
+                        @elseif ($notification->type === \App\Notifications\FamilyInviteAcceptedNotification::class)
+                            <flux:button size="sm" variant="ghost" wire:click="dismiss('{{ $notification->id }}')">
+                                {{ __('Ok') }}
+                            </flux:button>
+                        @endif
                     </div>
                 </div>
             @empty

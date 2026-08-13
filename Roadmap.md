@@ -85,6 +85,40 @@ Detalhes de uso em `CLAUDE.md` (seções "Local environment (Traefik + HTTPS)" e
 
 ---
 
+## Concluído — Convites para Família (item 1 da Feature 2) + Notificações de Convite
+
+* **Vínculo de família**: coluna `family_owner_id` em `users` (FK auto-referenciada, `nullable`,
+  `nullOnDelete`) — família é o dono mais todos os `users` com `family_owner_id` apontando para ele;
+  `NULL` significa "não é membro de ninguém" (dono ou usuário solo), sem flag booleana separada de "é
+  dono". Tabela `family_invites` (`owner_id`, `invited_user_id`, `unique(invited_user_id)`) guarda **só**
+  convites pendentes — aceitar ou recusar sempre apagam a linha, não há coluna de status.
+* **Model `FamilyInvite`** e relations novas em `User` (`familyOwner()`, `familyMembers()`,
+  `sentFamilyInvites()`, `receivedFamilyInvite()`, `remainingFamilySlots()`) — as primeiras relations do
+  model `User`, que antes não tinha nenhuma.
+* **Fluxo de convite** (`⚡send-family-invite.blade.php`, tela `/familia`): e-mail precisa pertencer a um
+  usuário já cadastrado (sem envio de e-mail real — usa só o sino de notificações existente, que exige
+  conta autenticada); valida autoconvite, convidado já pertencer a outra família (como dono ou membro) e
+  convite duplicado. Envio roda em `DB::transaction()` com `lockForUpdate()` no dono para serializar
+  concorrência, e uma violação da constraint `unique(invited_user_id)` é convertida em erro de validação
+  amigável.
+* **Aceite/recusa** (`⚡notification-center.blade.php`, ações `acceptInvite`/`rejectInvite`/`dismiss`):
+  diferente de `markBillAsPaid`/`remindLater` (que só marcam como lida), essas ações apagam a notificação
+  de verdade, seguindo o texto do roadmap ("a notificação é removida"). Ao aceitar, os convites que o
+  próprio usuário havia enviado como dono-em-espera são cancelados automaticamente (só pode pertencer a
+  uma família por vez). Notificações `FamilyInviteNotification` e `FamilyInviteAcceptedNotification` não
+  são `ShouldQueue` (diferente de `BillDueSoonNotification`) — disparadas direto de ação síncrona do
+  usuário, sem o cenário de dedupe de job agendado.
+* **Tela "Família"** (`⚡family-members.blade.php`): dono vê membros aceitos e convites pendentes com
+  botão de cancelar (adição além do texto literal do roadmap, para não deixar convite errado preso); membro
+  vê o dono e os demais integrantes, somente leitura. Item novo no menu lateral, grupo "Conta".
+* **Bug real corrigido no processo**: `family_owner_id` não estava no `#[Fillable(...)]` de `User`, então
+  tanto o `update()` no aceite quanto os `factory()->create([...])` dos testes descartavam o campo
+  silenciosamente por proteção de mass assignment.
+* **Fora de escopo**: compartilhamento de Contas/Receitas/Categorias entre membros (próximo item da ordem
+  recomendada) e "sair da família" para um membro aceito (não previsto no roadmap).
+
+---
+
 ## Feature 1 — Cartões de Crédito
 
 ### Objetivo
@@ -186,6 +220,10 @@ A cada nova compra adicionada ao cartão, o valor total da respectiva fatura dev
 
 # Feature 2 — Conta Conjunta (Família)
 
+> **Status**: fluxo de convite/aceite/recusa e vínculo de família implementados — ver seção "Concluído —
+> Convites para Família" acima. Falta o compartilhamento de dados (Despesas/Receitas/Cartões/Categorias)
+> entre os membros, descrito abaixo.
+
 ### Objetivo
 
 Permitir que um usuário compartilhe sua conta com até **dois usuários adicionais**, formando uma "Família".
@@ -242,8 +280,8 @@ Caso o usuário recuse:
 
 # Feature 3 — Central de Notificações
 
-> **Status**: sino/badge e "Notificações de Contas a Vencer" implementados — ver seção "Concluído" acima.
-> Falta só "Notificações de Convite" abaixo, que depende da Feature 2 (Família).
+> **Status**: sino/badge, "Notificações de Contas a Vencer" e "Notificações de Convite" implementados —
+> ver seções "Concluído" acima. Feature 3 está completa.
 
 ## Objetivo
 
@@ -316,8 +354,9 @@ A notificação deverá conter dois botões:
 0. ~~Traefik (reverse proxy, HTTPS local, preparo para deploy)~~ — concluído, ver seção acima.
 0. ~~RabbitMQ (fila real) + Central de Notificações — parte "contas a vencer"~~ — concluído, ver seção
    acima. Falta só "Notificações de Convite", que depende da Feature 2.
-1. Convites para Família (inclui "Notificações de Convite", completando a Feature 3)
-2. Compartilhamento de dados da Família
-3. Módulo de Cartões de Crédito
-4. Geração automática de Faturas
-5. Integração das Faturas com a tela de Despesas
+0. ~~Convites para Família (inclui "Notificações de Convite", completando a Feature 3)~~ — concluído, ver
+   seção acima.
+1. Compartilhamento de dados da Família
+2. Módulo de Cartões de Crédito
+3. Geração automática de Faturas
+4. Integração das Faturas com a tela de Despesas

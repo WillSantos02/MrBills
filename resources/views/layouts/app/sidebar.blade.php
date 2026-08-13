@@ -43,6 +43,14 @@
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
+            <flux:sidebar.nav>
+                <flux:sidebar.group :heading="__('Conta')" class="grid">
+                    <flux:sidebar.item icon="users" :href="route('family.index')" :current="request()->routeIs('family.index')" wire:navigate>
+                        {{ __('Família') }}
+                    </flux:sidebar.item>
+                </flux:sidebar.group>
+            </flux:sidebar.nav>
+
             <flux:spacer />
 
 {{--            <flux:sidebar.nav>--}}
