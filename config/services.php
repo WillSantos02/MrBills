@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    // E-mail que recebe o alerta de `queue:alert-failed` quando jobs caem em failed_jobs.
+    'admin' => [
+        'email' => env('ADMIN_EMAIL'),
+    ],
+
 ];

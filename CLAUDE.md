@@ -65,11 +65,38 @@ on all services, and switches the `core` Traefik router to the `letsencrypt` cer
 challenge, defined in `docker/traefik/traefik.yml`) instead of the local mkcert certificate. It also adds two
 always-on services that dev gets for free via `composer dev`'s process list: `worker` (`php artisan
 queue:work rabbitmq ...`) and `scheduler` (`php artisan schedule:work`) — both share `core`'s image/code
-mount. Requires `APP_DOMAIN` set to the real public domain and `ACME_EMAIL` set in `.env`:
+mount. `core` itself runs under **Laravel Octane (Swoole)** in production instead of `php artisan serve`
+(`command: 'php artisan octane:start --server=swoole --host=0.0.0.0 --port=80'` — `php8.5-swoole` is already
+installed in the Sail runtime image, no extra binary needed); dev keeps `artisan serve` via `composer dev`
+unchanged, this override only applies with the prod overlay loaded. Also mounts
+`docker/traefik/dynamic.prod/headers.yml` (HSTS/frame-deny/nosniff/referrer-policy) as the `secure-headers`
+Traefik middleware on the `core` router — the dev equivalent (`dynamic.dev/`) doesn't set these, so don't
+expect them when testing locally against `mrbills.localhost`.
+
+**Environment**: never reuse the dev `.env` in production (it has `APP_DEBUG=true` and weak secrets).
+Copy `.env.production.example` to `.env` on the server, fill in every `CHANGE_ME` placeholder (domain,
+`APP_KEY` via `php artisan key:generate`, DB/RabbitMQ passwords, `RESEND_KEY` — email is real in
+production via Resend, `composer require`d as `resend/resend-php`; `MAIL_MAILER=log` like dev would silently
+break e-mail verification and password reset), and set `ADMIN_EMAIL` (used by `queue:alert-failed` below).
+Requires `APP_DOMAIN` set to the real public domain and `ACME_EMAIL` set in `.env`:
 
 ```bash
 docker compose -f compose.yaml -f compose.prod.yaml up -d --build
 ```
+
+**Backup**: `docker/postgres/backup.sh` (`pg_dump` + gzip, 14-day retention, written to
+`docker/postgres/backups/` — a host bind mount, not a Docker volume, so it survives `docker compose down -v`)
+is meant to run daily via host crontab, e.g. `0 3 * * * cd /path/to/project && docker/postgres/backup.sh`.
+Local-only for now (no off-site copy — see `Roadmap.md` for that as tracked tech debt). Restore:
+`gunzip -c backups/mrbills-<timestamp>.sql.gz | docker compose exec -T pgsql psql -U "$DB_USERNAME" -d "$DB_DATABASE"`.
+
+**Health/monitoring**: `core` has a Docker `healthcheck:` (`curl -f http://localhost/up`, the health route
+Laravel registers via `health: '/up'` in `bootstrap/app.php`) so Compose/Traefik notice if it stops
+responding. The scheduled `queue:alert-failed` command (`app/Console/Commands/AlertFailedJobs.php`, daily at
+09:00) e-mails `ADMIN_EMAIL` when new rows land in `failed_jobs` — dedup is a cache key
+(`failed_jobs:last_alerted_id`, the highest id already alerted), same "stamp something so we don't
+re-notify" idea as `Bill::last_due_soon_notified_at`. No APM/error tracker (Sentry etc.) yet — also tracked
+as tech debt in `Roadmap.md`.
 
 ## Architecture
 
@@ -125,12 +152,55 @@ since the notification is queued, that row may not exist yet by the time the com
 naturally re-notifies since the column is stale — that's the entire "remind me tomorrow" mechanism, no
 separate snooze state.
 
+**Family data sharing**: `Bill`/`Income`/`Category`/`IncomeCategory` are still stamped with the `user_id` of
+whoever created them, but every read/edit/delete query in the `⚡list-*`/`⚡create-*` components filters by
+`whereIn('user_id', auth()->user()->familyGroupUserIds())` instead of a single `user_id`.
+`User::familyGroupUserIds()` (`app/Models/User.php`) resolves the whole family circle (owner + members,
+including the caller) from `family_owner_id`, and works the same whether called on the owner or a member.
+Category/income-category name uniqueness is enforced **per family**, not per creator
+(`Rule::unique(...)->where(fn ($q) => $q->whereIn('user_id', ...))` in `⚡create-category.blade.php` and the
+two `updateCategory` methods) — there's no DB-level constraint for this (the family group is dynamic, keyed
+off `family_owner_id`, not a fixed column per row), just the validation layer. The `category_id`/
+`income_category_id` a bill/income points to is validated the same way
+(`Rule::exists(...)->where(fn ($q) => $q->whereIn('user_id', ...))` in the 4 create/edit components) — a
+plain `exists:categories,id` would let a bill attach to *any* category in the database regardless of family,
+which silently leaks that bill's value into a stranger's category totals via `scopeWithTotals()`'s
+`withSum`.
+
+**Deleting an account you don't fully own — ownership transfer**: a user can always delete their own
+account, but a family **owner with active members** can't just self-destruct and cascade-delete data the
+family still depends on. `⚡delete-user-modal.blade.php` branches into 4 states based on
+`auth()->user()->familyMembers()->count()`, `sentOwnershipTransferRequest`, and
+`family_transfer_declined_at`: no members → normal deletion; owner with members and no pending
+request/decline → pick a member to transfer to; pending request → wait/cancel; declined → offer a
+non-destructive path. `OwnershipTransferRequest` (`from_user_id`/`to_user_id`, `unique(from_user_id)`) is a
+family-invite-style "pending-only" table — accept/reject in `⚡notification-center.blade.php` always deletes
+the row, no status column. On **accept**, inside one `DB::transaction()`: same-named categories/income
+categories on both sides are merged (bills/incomes repointed, the duplicate deleted) *before* bulk
+`update()`-ing every `Bill`/`Income` `user_id` from the old owner to the new one — otherwise the mass update
+would collide with `unique(user_id, name)`; the family tree is then re-rooted (`family_owner_id`) so the old
+owner becomes a regular member, which is what actually unblocks their own deletion afterward (state 1 above,
+since they no longer own anyone). On **reject**, nothing about the data moves — only
+`family_transfer_declined_at` gets stamped, which is what lets the modal offer a **soft-delete** instead
+(`User` uses `SoftDeletes`; a soft-deleted row never triggers the `onDelete('cascade')` on
+`bills`/`categories`/`incomes`/`income_categories`, and the Fortify auth guard already excludes soft-deleted
+users automatically via Eloquent's global scope, so the account just stops being able to log in).
+`familyGroupUserIds()` uses `withTrashed()` specifically so a soft-deleted former owner's data stays visible
+to the family that's still using it. That preserved data isn't permanent, though: `deleteUser()` also checks
+`trashedFamilyOwner()`/`isLastActiveFamilyMember()` — if the person deleting their account is the last
+active member of a family whose (soft-deleted) former owner was never really transferred, their departure
+`forceDelete()`s that former owner too, cascading the real, final deletion at that point.
+
 **Test coverage**: `Bill`, `Income`, `Category`, `IncomeCategory` each have a factory
 (`database/factories/`) and Feature tests (`tests/Feature/{Bill,Income,Category,IncomeCategory}Test.php`,
 `tests/Feature/Livewire/ListBillsFilterTest.php`) covering weekend rollover, derived "Vencido" status,
 `createRecurrent`/`siblings()`, and `scopeWithTotals()`; `tests/Feature/SendBillDueSoonNotificationsTest.php`
 and `tests/Feature/Livewire/NotificationCenterTest.php` cover the notification window/dedup rules and the
-bell's actions — all using `RefreshDatabase` against the real Postgres Sail service, no sqlite/mocking.
+bell's actions; `tests/Feature/Livewire/FamilyDataSharingTest.php` covers cross-member visibility/edit and the
+family-scoped `category_id`/name-uniqueness validation above; `tests/Feature/Livewire/OwnershipTransferTest.php`
+covers the accept/reject/soft-delete/dissolution flow; `tests/Feature/AlertFailedJobsTest.php` covers the
+`failed_jobs` alert dedup — all using `RefreshDatabase` against the real Postgres Sail service, no
+sqlite/mocking.
 `phpunit.xml` forces `QUEUE_CONNECTION=sync`, so `ShouldQueue` notifications still execute inline during
 tests (no RabbitMQ dependency in CI). `composer types:check` (PHPStan level 7) is currently clean (0 errors);
 keep it that way by annotating new Eloquent relations/scopes with generics the way the existing models do

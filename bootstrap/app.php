@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\AlertFailedJobs;
 use App\Console\Commands\SendBillDueSoonNotifications;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->command(SendBillDueSoonNotifications::class)->dailyAt('08:00');
+        $schedule->command(AlertFailedJobs::class)->dailyAt('09:00');
     })
     ->withMiddleware(function (Middleware $middleware): void {
         // Traefik terminates TLS and forwards plain HTTP inside the sail Docker

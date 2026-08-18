@@ -1,8 +1,12 @@
 services:
     core:
         restart: unless-stopped
+        # php artisan serve (usado em dev via composer dev / Sail) não é recomendado pelo próprio Laravel
+        # para produção — troca pelo Octane (Swoole, já vem instalado na imagem do Sail) só aqui.
+        command: 'php artisan octane:start --server=swoole --host=0.0.0.0 --port=80'
         labels:
             traefik.http.routers.core.tls.certresolver: 'letsencrypt'
+            traefik.http.routers.core.middlewares: 'secure-headers@file'
     pgsql:
         restart: unless-stopped
     rabbitmq:
@@ -12,6 +16,8 @@ services:
         command:
             - '--configFile=/etc/traefik/traefik.yml'
             - '--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}'
+        volumes:
+            - './docker/traefik/dynamic.prod:/etc/traefik/dynamic:ro'
     worker:
         build:
             context: './vendor/laravel/sail/runtimes/8.5'

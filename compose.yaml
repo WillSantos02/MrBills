@@ -21,6 +21,16 @@ services:
         depends_on:
             - pgsql
             - rabbitmq
+        healthcheck:
+            test:
+                - CMD
+                - curl
+                - '-f'
+                - 'http://localhost/up'
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
         labels:
             traefik.enable: 'true'
             traefik.http.routers.core.rule: 'Host(`${APP_DOMAIN}`)'

@@ -119,6 +119,61 @@ Detalhes de uso em `CLAUDE.md` (seções "Local environment (Traefik + HTTPS)" e
 
 ---
 
+## Concluído — Compartilhamento de Dados da Família
+
+* **`User::familyGroupUserIds()`**: novo helper único que resolve o círculo familiar completo (dono + todos
+  os membros, incluindo o próprio usuário) a partir de `family_owner_id` — funciona tanto chamado a partir do
+  dono quanto de um membro, e retorna só o próprio ID para um usuário solo. Substitui, em todos os pontos de
+  leitura/edição/exclusão de `Bill`, `Income`, `Category` e `IncomeCategory`
+  (`⚡list-bills.blade.php`, `⚡create-bill.blade.php`, `⚡list-income.blade.php`, `⚡create-income.blade.php`,
+  `⚡list-categories.blade.php`, `⚡list-income-categories.blade.php`), o antigo
+  `where('user_id', auth()->id())` por `whereIn('user_id', ...familyGroupUserIds())`. Ao **criar** um
+  registro, `user_id` continua sendo de quem criou (mantém autoria); a diferença é só no que a família
+  consegue enxergar/editar/excluir depois.
+* **Nome de categoria único por família, não por criador**: `⚡create-category.blade.php` (despesa e
+  entrada) e a edição em `⚡list-categories.blade.php`/`⚡list-income-categories.blade.php` trocaram
+  `Rule::unique(...)->where('user_id', auth()->id())` por uma checagem via `whereIn` nos IDs da família —
+  evita duas categorias "Mercado" duplicadas quando dois membros cadastram a mesma coisa. Reforçado só na
+  validação (sem coluna nova no banco): o grupo familiar é dinâmico, calculado a partir de
+  `family_owner_id`, então uma constraint de unicidade fixa por registro não faria sentido para no máximo 3
+  usuários por família.
+* **Dashboard agregado por família**: `⚡dashboard-summary.blade.php` passou a somar KPIs, gráfico
+  trimestral, maiores despesas por categoria e contas próximas de todos os `user_id` do círculo familiar por
+  padrão, com um novo `flux:select` ("Toda a família" + um membro por vez) que só aparece quando a família
+  tem mais de um integrante.
+* **Fora de escopo**: notificações de "conta a vencer" (`⚡notification-center.blade.php`,
+  `markBillAsPaid`) continuam por usuário individual — não foram estendidas para notificar a família
+  inteira quando uma conta de qualquer membro está vencendo, já que isso não fazia parte do pedido original
+  de compartilhamento de Despesas/Receitas/Categorias.
+
+---
+
+## Concluído — Auditoria e Correções de Pré-Deploy
+
+Antes de abrir o app pra usuários reais, foi feita uma auditoria completa (segurança, integridade de dados,
+infra) que encontrou 4 bloqueadores e 6 itens importantes. Todos os bloqueadores e importantes foram
+corrigidos — detalhes técnicos em `CLAUDE.md` ("Production deploy" e a entrada "Family data sharing"/"Deleting
+an account you don't fully own" em "Architecture"):
+
+* Backup local do PostgreSQL (`docker/postgres/backup.sh`), `.env.production.example` dedicado, e-mail
+  transacional real via Resend.
+* Transferência de titularidade de família antes de excluir a conta (com soft-delete como caminho não
+  destrutivo caso a transferência seja recusada) — substitui o que seria só um bloqueio simples.
+* Validação de `category_id`/`income_category_id` escopada por família (fechava um vazamento de dado
+  agregado entre famílias não relacionadas).
+* Cabeçalhos de segurança HTTP via Traefik, adoção do Laravel Octane (Swoole) em produção no lugar de
+  `php artisan serve`, healthcheck do `core` e alerta por e-mail de `failed_jobs`.
+
+**Dívida técnica registrada, fora deste ciclo** (nenhuma delas bloqueia o lançamento, mas devem ser
+revisitadas):
+
+* Backup do Postgres é só local no VPS — sem cópia off-site (S3/Backblaze/etc.).
+* Sem monitoramento/rastreamento de erros (Sentry ou equivalente).
+* Traefik ainda monta `/var/run/docker.sock` diretamente (somente leitura) para o provider Docker —
+  funciona e o risco é aceito, mas um docker-socket-proxy restringiria melhor o acesso.
+
+---
+
 ## Feature 1 — Cartões de Crédito
 
 ### Objetivo
@@ -220,9 +275,10 @@ A cada nova compra adicionada ao cartão, o valor total da respectiva fatura dev
 
 # Feature 2 — Conta Conjunta (Família)
 
-> **Status**: fluxo de convite/aceite/recusa e vínculo de família implementados — ver seção "Concluído —
-> Convites para Família" acima. Falta o compartilhamento de dados (Despesas/Receitas/Cartões/Categorias)
-> entre os membros, descrito abaixo.
+> **Status**: fluxo de convite/aceite/recusa, vínculo de família e compartilhamento de Despesas/Receitas/
+> Categorias entre os membros implementados — ver seções "Concluído — Convites para Família" e "Concluído —
+> Compartilhamento de Dados da Família" acima. Falta só o compartilhamento de Cartões, que depende do
+> módulo de Cartões de Crédito (Feature 1) ainda não implementado.
 
 ### Objetivo
 
@@ -356,7 +412,8 @@ A notificação deverá conter dois botões:
    acima. Falta só "Notificações de Convite", que depende da Feature 2.
 0. ~~Convites para Família (inclui "Notificações de Convite", completando a Feature 3)~~ — concluído, ver
    seção acima.
-1. Compartilhamento de dados da Família
-2. Módulo de Cartões de Crédito
-3. Geração automática de Faturas
-4. Integração das Faturas com a tela de Despesas
+0. ~~Compartilhamento de dados da Família (Despesas/Receitas/Categorias)~~ — concluído, ver seção acima.
+   Falta só Cartões, que entra junto com o item 1 abaixo.
+1. Módulo de Cartões de Crédito
+2. Geração automática de Faturas
+3. Integração das Faturas com a tela de Despesas
