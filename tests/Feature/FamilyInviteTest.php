@@ -64,4 +64,35 @@ class FamilyInviteTest extends TestCase
 
         $this->assertSame($expectedRemaining, $owner->remainingFamilySlots());
     }
+
+    public function test_family_group_user_ids_for_a_solo_user_is_only_themselves(): void
+    {
+        $solo = User::factory()->create();
+
+        $this->assertSame([$solo->id], $solo->familyGroupUserIds());
+    }
+
+    public function test_family_group_user_ids_for_an_owner_includes_all_members(): void
+    {
+        $owner = User::factory()->create();
+        $memberOne = User::factory()->create(['family_owner_id' => $owner->id]);
+        $memberTwo = User::factory()->create(['family_owner_id' => $owner->id]);
+
+        $this->assertEqualsCanonicalizing(
+            [$owner->id, $memberOne->id, $memberTwo->id],
+            $owner->familyGroupUserIds(),
+        );
+    }
+
+    public function test_family_group_user_ids_for_a_member_includes_the_owner_and_siblings(): void
+    {
+        $owner = User::factory()->create();
+        $memberOne = User::factory()->create(['family_owner_id' => $owner->id]);
+        $memberTwo = User::factory()->create(['family_owner_id' => $owner->id]);
+
+        $this->assertEqualsCanonicalizing(
+            [$owner->id, $memberOne->id, $memberTwo->id],
+            $memberOne->familyGroupUserIds(),
+        );
+    }
 }

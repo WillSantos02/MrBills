@@ -4,25 +4,31 @@ use App\Enums\BillStatus;
 use App\Models\Bill;
 use App\Models\Category;
 use App\Models\Income;
+use App\Models\User;
 use Carbon\CarbonInterface;
 use Livewire\Component;
 
 new class extends Component
 {
+    public string $memberFilter = '';
+
     public function with(): array
     {
-        $userId = auth()->id();
+        $familyUserIds = auth()->user()->familyGroupUserIds();
+
+        $userIds = $this->memberFilter !== '' ? [(int) $this->memberFilter] : $familyUserIds;
+
         $now = now();
 
         // KPI: Total a Pagar — contas pendentes com vencimento no mês atual.
-        $totalAPagar = Bill::where('user_id', $userId)
+        $totalAPagar = Bill::whereIn('user_id', $userIds)
             ->where('status', BillStatus::Pendente->value)
             ->whereYear('actual_due_date', $now->year)
             ->whereMonth('actual_due_date', $now->month)
             ->sum('value');
 
         // KPI: Carteira — entradas do mês atual.
-        $totalCarteira = Income::where('user_id', $userId)
+        $totalCarteira = Income::whereIn('user_id', $userIds)
             ->whereYear('date', $now->year)
             ->whereMonth('date', $now->month)
             ->sum('value');
@@ -30,7 +36,7 @@ new class extends Component
         $saldoMes = $totalCarteira - $totalAPagar;
 
         // Maiores despesas do mês, agrupadas por categoria.
-        $despesasPorCategoria = Category::where('user_id', $userId)
+        $despesasPorCategoria = Category::whereIn('user_id', $userIds)
             ->withSum(['bills as total_mes' => function ($query) use ($now) {
                 $query->whereYear('actual_due_date', $now->year)
                     ->whereMonth('actual_due_date', $now->month);
@@ -42,7 +48,7 @@ new class extends Component
 
         // Contas próximas — pendentes, vencendo nos próximos 3 dias.
         $contasProximas = Bill::with('category')
-            ->where('user_id', $userId)
+            ->whereIn('user_id', $userIds)
             ->where('status', BillStatus::Pendente->value)
             ->whereBetween('actual_due_date', [
                 $now->toDateString(),
@@ -54,13 +60,13 @@ new class extends Component
         // Gráfico trimestral: últimos 3 meses, Entradas (Carteira) vs Saídas (Contas).
         $grafico = collect(range(2, 0))
             ->map(fn ($i) => $now->copy()->subMonths($i))
-            ->map(function (CarbonInterface $mes) use ($userId) {
-                $entradas = Income::where('user_id', $userId)
+            ->map(function (CarbonInterface $mes) use ($userIds) {
+                $entradas = Income::whereIn('user_id', $userIds)
                     ->whereYear('date', $mes->year)
                     ->whereMonth('date', $mes->month)
                     ->sum('value');
 
-                $saidas = Bill::where('user_id', $userId)
+                $saidas = Bill::whereIn('user_id', $userIds)
                     ->whereYear('actual_due_date', $mes->year)
                     ->whereMonth('actual_due_date', $mes->month)
                     ->sum('value');
@@ -79,12 +85,24 @@ new class extends Component
             'despesasPorCategoria' => $despesasPorCategoria,
             'contasProximas' => $contasProximas,
             'grafico' => $grafico,
+            'familyMembers' => User::whereIn('id', $familyUserIds)->orderBy('name')->get(['id', 'name']),
         ];
     }
 };
 ?>
 
 <div class="flex h-full w-full flex-1 flex-col gap-4 rounded-xl">
+
+    @if ($familyMembers->count() > 1)
+        <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-zinc-900 dark:border-zinc-700 md:w-1/3">
+            <flux:select wire:model.live="memberFilter" label="Membro da Família">
+                <flux:select.option value="">Toda a família</flux:select.option>
+                @foreach ($familyMembers as $member)
+                    <flux:select.option value="{{ $member->id }}">{{ $member->name }}</flux:select.option>
+                @endforeach
+            </flux:select>
+        </div>
+    @endif
 
     {{-- KPIs --}}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">

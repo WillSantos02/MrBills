@@ -3,6 +3,7 @@
 use App\Enums\BillStatus;
 use App\Models\Bill;
 use App\Models\Category;
+use Illuminate\Validation\Rule;
 use Livewire\Component;
 
 new class extends Component
@@ -17,7 +18,7 @@ new class extends Component
     public function with(): array
     {
         return [
-            'categories' => Category::where('user_id', auth()->id())
+            'categories' => Category::whereIn('user_id', auth()->user()->familyGroupUserIds())
                 ->orderBy('name')
                 ->get(),
         ];
@@ -29,7 +30,10 @@ new class extends Component
             'description' => 'required|string|max:255',
             'value' => 'required|numeric|min:0.01',
             'due_date' => 'required|date',
-            'category_id' => 'nullable|exists:categories,id',
+            'category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->whereIn('user_id', auth()->user()->familyGroupUserIds())),
+            ],
         ];
 
         if ($this->is_recurrent) {

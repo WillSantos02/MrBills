@@ -25,7 +25,7 @@ new class extends Component
     public function with(): array
     {
         return [
-            'categories' => Category::where('user_id', auth()->id())
+            'categories' => Category::whereIn('user_id', auth()->user()->familyGroupUserIds())
                 ->withTotals()
                 ->latest()
                 ->get(),
@@ -34,7 +34,7 @@ new class extends Component
 
     public function editCategory(int $categoryId): void
     {
-        $category = Category::where('user_id', auth()->id())->findOrFail($categoryId);
+        $category = Category::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($categoryId);
 
         $this->editingCategoryId = $category->id;
         $this->edit_name = $category->name;
@@ -53,14 +53,14 @@ new class extends Component
                 'string',
                 'max:255',
                 Rule::unique('categories', 'name')
-                    ->where('user_id', auth()->id())
+                    ->where(fn ($query) => $query->whereIn('user_id', auth()->user()->familyGroupUserIds()))
                     ->ignore($this->editingCategoryId),
             ],
         ], [
-            'edit_name.unique' => 'Você já possui uma categoria com esse nome.',
+            'edit_name.unique' => 'Sua família já possui uma categoria com esse nome.',
         ]);
 
-        Category::where('user_id', auth()->id())
+        Category::whereIn('user_id', auth()->user()->familyGroupUserIds())
             ->findOrFail($this->editingCategoryId)
             ->update(['name' => $this->edit_name]);
 
@@ -69,7 +69,7 @@ new class extends Component
 
     public function askDeleteCategory(int $categoryId): void
     {
-        $category = Category::where('user_id', auth()->id())
+        $category = Category::whereIn('user_id', auth()->user()->familyGroupUserIds())
             ->withCount('bills')
             ->findOrFail($categoryId);
 
@@ -86,7 +86,7 @@ new class extends Component
     public function confirmDeleteCategory(): void
     {
         // As contas vinculadas ficam sem categoria automaticamente (nullOnDelete na migration).
-        Category::where('user_id', auth()->id())
+        Category::whereIn('user_id', auth()->user()->familyGroupUserIds())
             ->where('id', $this->deletingCategoryId)
             ->delete();
 

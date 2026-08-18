@@ -23,7 +23,7 @@ new class extends Component
     public function with(): array
     {
         return [
-            'incomeCategories' => IncomeCategory::where('user_id', auth()->id())
+            'incomeCategories' => IncomeCategory::whereIn('user_id', auth()->user()->familyGroupUserIds())
                 ->withTotals()
                 ->latest()
                 ->get(),
@@ -32,7 +32,7 @@ new class extends Component
 
     public function editCategory(int $categoryId): void
     {
-        $category = IncomeCategory::where('user_id', auth()->id())->findOrFail($categoryId);
+        $category = IncomeCategory::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($categoryId);
 
         $this->editingCategoryId = $category->id;
         $this->edit_name = $category->name;
@@ -51,14 +51,14 @@ new class extends Component
                 'string',
                 'max:255',
                 Rule::unique('income_categories', 'name')
-                    ->where('user_id', auth()->id())
+                    ->where(fn ($query) => $query->whereIn('user_id', auth()->user()->familyGroupUserIds()))
                     ->ignore($this->editingCategoryId),
             ],
         ], [
-            'edit_name.unique' => 'Você já possui uma categoria de entrada com esse nome.',
+            'edit_name.unique' => 'Sua família já possui uma categoria de entrada com esse nome.',
         ]);
 
-        IncomeCategory::where('user_id', auth()->id())
+        IncomeCategory::whereIn('user_id', auth()->user()->familyGroupUserIds())
             ->findOrFail($this->editingCategoryId)
             ->update(['name' => $this->edit_name]);
 
@@ -67,7 +67,7 @@ new class extends Component
 
     public function askDeleteCategory(int $categoryId): void
     {
-        $category = IncomeCategory::where('user_id', auth()->id())
+        $category = IncomeCategory::whereIn('user_id', auth()->user()->familyGroupUserIds())
             ->withCount('incomes')
             ->findOrFail($categoryId);
 
@@ -83,7 +83,7 @@ new class extends Component
 
     public function confirmDeleteCategory(): void
     {
-        IncomeCategory::where('user_id', auth()->id())
+        IncomeCategory::whereIn('user_id', auth()->user()->familyGroupUserIds())
             ->where('id', $this->deletingCategoryId)
             ->delete();
 

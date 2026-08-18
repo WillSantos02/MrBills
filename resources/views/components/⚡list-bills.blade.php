@@ -4,6 +4,7 @@ use App\Enums\BillStatus;
 use App\Models\Bill;
 use App\Models\Category;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -99,7 +100,9 @@ new class extends Component
 
     public function with(): array
     {
-        $query = Bill::with('category')->where('user_id', auth()->id());
+        $familyUserIds = auth()->user()->familyGroupUserIds();
+
+        $query = Bill::with('category')->whereIn('user_id', $familyUserIds);
 
         $this->applyPeriodFilter($query);
         $this->applyStatusFilter($query);
@@ -110,7 +113,7 @@ new class extends Component
 
         return [
             'bills' => $query->orderBy('actual_due_date')->get(),
-            'categories' => Category::where('user_id', auth()->id())
+            'categories' => Category::whereIn('user_id', $familyUserIds)
                 ->orderBy('name')
                 ->get(),
             'statuses' => BillStatus::cases(),
@@ -119,7 +122,7 @@ new class extends Component
 
     public function editBill(int $billId): void
     {
-        $bill = Bill::where('user_id', auth()->id())->findOrFail($billId);
+        $bill = Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($billId);
 
         $this->editingBillId = $bill->id;
         $this->edit_description = $bill->description;
@@ -147,11 +150,14 @@ new class extends Component
             'edit_description' => 'required|string|max:255',
             'edit_value' => 'required|numeric|min:0.01',
             'edit_due_date' => 'required|date',
-            'edit_category_id' => 'nullable|exists:categories,id',
+            'edit_category_id' => [
+                'nullable',
+                Rule::exists('categories', 'id')->where(fn ($q) => $q->whereIn('user_id', auth()->user()->familyGroupUserIds())),
+            ],
             'edit_status' => 'required|integer',
         ]);
 
-        $bill = Bill::where('user_id', auth()->id())->findOrFail($this->editingBillId);
+        $bill = Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($this->editingBillId);
 
         $bill->update([
             'description' => $this->edit_description,
@@ -166,7 +172,7 @@ new class extends Component
 
     public function askDelete(int $billId): void
     {
-        $bill = Bill::where('user_id', auth()->id())->findOrFail($billId);
+        $bill = Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($billId);
 
         $this->deletingBillId = $bill->id;
         $this->deletingIsRecurrent = filled($bill->recurrence_group_id);
@@ -179,7 +185,7 @@ new class extends Component
 
     public function deleteOnlyThis(): void
     {
-        Bill::where('user_id', auth()->id())
+        Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())
             ->where('id', $this->deletingBillId)
             ->delete();
 
@@ -188,9 +194,11 @@ new class extends Component
 
     public function deleteThisAndFuture(): void
     {
-        $bill = Bill::where('user_id', auth()->id())->findOrFail($this->deletingBillId);
+        $familyUserIds = auth()->user()->familyGroupUserIds();
 
-        Bill::where('user_id', auth()->id())
+        $bill = Bill::whereIn('user_id', $familyUserIds)->findOrFail($this->deletingBillId);
+
+        Bill::whereIn('user_id', $familyUserIds)
             ->where('recurrence_group_id', $bill->recurrence_group_id)
             ->where('current_installments', '>=', $bill->current_installments)
             ->delete();

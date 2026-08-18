@@ -2,6 +2,7 @@
 
 use App\Models\Income;
 use App\Models\IncomeCategory;
+use Illuminate\Validation\Rule;
 use Livewire\Component;
 
 new class extends Component
@@ -16,7 +17,7 @@ new class extends Component
     public function with(): array
     {
         return [
-            'incomeCategories' => IncomeCategory::where('user_id', auth()->id())
+            'incomeCategories' => IncomeCategory::whereIn('user_id', auth()->user()->familyGroupUserIds())
                 ->orderBy('name')
                 ->get(),
         ];
@@ -28,7 +29,10 @@ new class extends Component
             'description' => 'required|string|max:255',
             'value' => 'required|numeric|min:0.01',
             'date' => 'required|date',
-            'income_category_id' => 'nullable|exists:income_categories,id',
+            'income_category_id' => [
+                'nullable',
+                Rule::exists('income_categories', 'id')->where(fn ($q) => $q->whereIn('user_id', auth()->user()->familyGroupUserIds())),
+            ],
         ];
 
         if ($this->is_recurrent) {

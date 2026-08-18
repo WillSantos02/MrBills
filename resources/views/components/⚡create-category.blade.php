@@ -12,16 +12,18 @@ new class extends Component
 
     public function save(): void
     {
+        $familyUserIds = auth()->user()->familyGroupUserIds();
+
         if ($this->type === 'entrada') {
             $this->validate([
                 'name' => [
                     'required',
                     'string',
                     'max:255',
-                    Rule::unique('income_categories', 'name')->where('user_id', auth()->id()),
+                    Rule::unique('income_categories', 'name')->where(fn ($query) => $query->whereIn('user_id', $familyUserIds)),
                 ],
             ], [
-                'name.unique' => 'Você já possui uma categoria de entrada com esse nome.',
+                'name.unique' => 'Sua família já possui uma categoria de entrada com esse nome.',
             ]);
 
             IncomeCategory::create([
@@ -36,10 +38,10 @@ new class extends Component
                     'required',
                     'string',
                     'max:255',
-                    Rule::unique('categories', 'name')->where('user_id', auth()->id()),
+                    Rule::unique('categories', 'name')->where(fn ($query) => $query->whereIn('user_id', $familyUserIds)),
                 ],
             ], [
-                'name.unique' => 'Você já possui uma categoria de despesa com esse nome.',
+                'name.unique' => 'Sua família já possui uma categoria de despesa com esse nome.',
             ]);
 
             Category::create([

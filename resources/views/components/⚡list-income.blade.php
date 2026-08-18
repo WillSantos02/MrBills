@@ -3,6 +3,7 @@
 use App\Models\Income;
 use App\Models\IncomeCategory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -76,7 +77,9 @@ new class extends Component
 
     public function with(): array
     {
-        $query = Income::with('category')->where('user_id', auth()->id());
+        $familyUserIds = auth()->user()->familyGroupUserIds();
+
+        $query = Income::with('category')->whereIn('user_id', $familyUserIds);
 
         $this->applyPeriodFilter($query);
 
@@ -86,7 +89,7 @@ new class extends Component
 
         return [
             'incomes' => $query->orderBy('date')->get(),
-            'incomeCategories' => IncomeCategory::where('user_id', auth()->id())
+            'incomeCategories' => IncomeCategory::whereIn('user_id', $familyUserIds)
                 ->orderBy('name')
                 ->get(),
         ];
@@ -94,7 +97,7 @@ new class extends Component
 
     public function editIncome(int $incomeId): void
     {
-        $income = Income::where('user_id', auth()->id())->findOrFail($incomeId);
+        $income = Income::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($incomeId);
 
         $this->editingIncomeId = $income->id;
         $this->edit_description = $income->description;
@@ -120,10 +123,13 @@ new class extends Component
             'edit_description' => 'required|string|max:255',
             'edit_value' => 'required|numeric|min:0.01',
             'edit_date' => 'required|date',
-            'edit_income_category_id' => 'nullable|exists:income_categories,id',
+            'edit_income_category_id' => [
+                'nullable',
+                Rule::exists('income_categories', 'id')->where(fn ($q) => $q->whereIn('user_id', auth()->user()->familyGroupUserIds())),
+            ],
         ]);
 
-        $income = Income::where('user_id', auth()->id())->findOrFail($this->editingIncomeId);
+        $income = Income::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($this->editingIncomeId);
 
         $income->update([
             'description' => $this->edit_description,
@@ -137,7 +143,7 @@ new class extends Component
 
     public function askDelete(int $incomeId): void
     {
-        $income = Income::where('user_id', auth()->id())->findOrFail($incomeId);
+        $income = Income::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($incomeId);
 
         $this->deletingIncomeId = $income->id;
         $this->deletingIsRecurrent = filled($income->recurrence_group_id);
@@ -150,7 +156,7 @@ new class extends Component
 
     public function deleteOnlyThis(): void
     {
-        Income::where('user_id', auth()->id())
+        Income::whereIn('user_id', auth()->user()->familyGroupUserIds())
             ->where('id', $this->deletingIncomeId)
             ->delete();
 
@@ -159,9 +165,11 @@ new class extends Component
 
     public function deleteThisAndFuture(): void
     {
-        $income = Income::where('user_id', auth()->id())->findOrFail($this->deletingIncomeId);
+        $familyUserIds = auth()->user()->familyGroupUserIds();
 
-        Income::where('user_id', auth()->id())
+        $income = Income::whereIn('user_id', $familyUserIds)->findOrFail($this->deletingIncomeId);
+
+        Income::whereIn('user_id', $familyUserIds)
             ->where('recurrence_group_id', $income->recurrence_group_id)
             ->where('current_installments', '>=', $income->current_installments)
             ->delete();
