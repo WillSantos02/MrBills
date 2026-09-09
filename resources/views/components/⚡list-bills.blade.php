@@ -3,6 +3,7 @@
 use App\Enums\BillStatus;
 use App\Models\Bill;
 use App\Models\Category;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
@@ -15,8 +16,17 @@ new class extends Component
     public string $specificMonth = '';
     public string $periodStart = '';
     public string $periodEnd = '';
-    public string $statusFilter = '';
+    /** @var array<int, int|string> */
+    public array $statusFilter = [];
     public string $categoryFilter = '';
+
+    // Ordenação
+    public string $sortColumn = 'actual_due_date';
+    public string $sortDirection = 'asc';
+
+    // Seleção de contas para pagamento
+    /** @var array<int, int> */
+    public array $selectedBills = [];
 
     // Edição
     public ?int $editingBillId = null;
@@ -80,21 +90,75 @@ new class extends Component
 
     protected function applyStatusFilter(Builder $query): void
     {
-        if ($this->statusFilter === '') {
+        $selected = array_values(array_filter(array_map('intval', $this->statusFilter)));
+
+        if ($selected === []) {
             return;
         }
 
-        $status = BillStatus::from((int) $this->statusFilter);
+        $today = now()->toDateString();
 
-        // "Vencido" não é persistido — é Pendente com vencimento no passado (ver effective_status no Model).
-        if ($status === BillStatus::Vencido) {
-            $query->where('status', BillStatus::Pendente->value)
-                ->where('actual_due_date', '<', now()->toDateString());
-        } elseif ($status === BillStatus::Pendente) {
-            $query->where('status', BillStatus::Pendente->value)
-                ->where('actual_due_date', '>=', now()->toDateString());
+        // Vários status selecionados = união (OR) das condições de cada um.
+        $query->where(function (Builder $outer) use ($selected, $today) {
+            foreach ($selected as $value) {
+                $status = BillStatus::tryFrom($value);
+
+                if ($status === null) {
+                    continue;
+                }
+
+                $outer->orWhere(function (Builder $q) use ($status, $today) {
+                    // "Vencido" não é persistido — é Pendente com vencimento no passado (ver effective_status no Model).
+                    if ($status === BillStatus::Vencido) {
+                        $q->where('status', BillStatus::Pendente->value)
+                            ->where('actual_due_date', '<', $today);
+                    } elseif ($status === BillStatus::Pendente) {
+                        $q->where('status', BillStatus::Pendente->value)
+                            ->where('actual_due_date', '>=', $today);
+                    } else {
+                        $q->where('status', $status->value);
+                    }
+                });
+            }
+        });
+    }
+
+    protected function applySorting(Builder $query): void
+    {
+        $direction = $this->sortDirection === 'desc' ? 'desc' : 'asc';
+
+        match ($this->sortColumn) {
+            'user' => $query->orderBy(
+                User::select('name')->whereColumn('users.id', 'bills.user_id'),
+                $direction
+            ),
+            'category' => $query->orderBy(
+                Category::select('name')->whereColumn('categories.id', 'bills.category_id'),
+                $direction
+            ),
+            'description', 'value', 'due_date', 'is_recurrent', 'status' => $query->orderBy($this->sortColumn, $direction),
+            default => $query->orderBy('actual_due_date', $direction),
+        };
+
+        // Desempate estável para colunas com valores repetidos.
+        if ($this->sortColumn !== 'actual_due_date') {
+            $query->orderBy('actual_due_date');
+        }
+    }
+
+    public function sortBy(string $column): void
+    {
+        $sortable = ['description', 'user', 'category', 'value', 'due_date', 'actual_due_date', 'is_recurrent', 'status'];
+
+        if (! in_array($column, $sortable, true)) {
+            return;
+        }
+
+        if ($this->sortColumn === $column) {
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
         } else {
-            $query->where('status', $status->value);
+            $this->sortColumn = $column;
+            $this->sortDirection = 'asc';
         }
     }
 
@@ -102,7 +166,7 @@ new class extends Component
     {
         $familyUserIds = auth()->user()->familyGroupUserIds();
 
-        $query = Bill::with('category')->whereIn('user_id', $familyUserIds);
+        $query = Bill::with(['category', 'user'])->whereIn('user_id', $familyUserIds);
 
         $this->applyPeriodFilter($query);
         $this->applyStatusFilter($query);
@@ -111,13 +175,37 @@ new class extends Component
             $query->where('category_id', $this->categoryFilter);
         }
 
+        $this->applySorting($query);
+
+        $selectedIds = array_map('intval', $this->selectedBills);
+
+        $selectedTotal = $selectedIds === [] ? 0.0 : (float) Bill::whereIn('user_id', $familyUserIds)
+            ->whereIn('id', $selectedIds)
+            ->sum('value');
+
         return [
-            'bills' => $query->orderBy('actual_due_date')->get(),
+            'bills' => $query->get(),
             'categories' => Category::whereIn('user_id', $familyUserIds)
                 ->orderBy('name')
                 ->get(),
             'statuses' => BillStatus::cases(),
+            'selectedTotal' => $selectedTotal,
+            'columns' => [
+                ['key' => 'description', 'label' => 'Descrição'],
+                ['key' => 'user', 'label' => 'Dono'],
+                ['key' => 'category', 'label' => 'Categoria'],
+                ['key' => 'value', 'label' => 'Valor'],
+                ['key' => 'due_date', 'label' => 'Venc. Original'],
+                ['key' => 'actual_due_date', 'label' => 'Venc. Real (Útil)'],
+                ['key' => 'is_recurrent', 'label' => 'Recorrente?'],
+                ['key' => 'status', 'label' => 'Status'],
+            ],
         ];
+    }
+
+    public function clearSelection(): void
+    {
+        $this->selectedBills = [];
     }
 
     public function editBill(int $billId): void
@@ -231,12 +319,11 @@ new class extends Component
             <flux:input type="date" wire:model.live="periodEnd" label="Data Final" />
         @endif
 
-        <flux:select wire:model.live="statusFilter" label="Status">
-            <flux:select.option value="">Todos</flux:select.option>
+        <flux:checkbox.group wire:model.live="statusFilter" label="Status">
             @foreach ($statuses as $status)
-                <flux:select.option value="{{ $status->value }}">{{ $status->label() }}</flux:select.option>
+                <flux:checkbox value="{{ $status->value }}" label="{{ $status->label() }}" />
             @endforeach
-        </flux:select>
+        </flux:checkbox.group>
 
         <flux:select wire:model.live="categoryFilter" label="Categoria">
             <flux:select.option value="">Todas</flux:select.option>
@@ -246,24 +333,52 @@ new class extends Component
         </flux:select>
     </div>
 
+    @if (count($selectedBills) > 0)
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-900 dark:bg-blue-950">
+            <div class="text-sm text-blue-900 dark:text-blue-100">
+                <span class="font-medium">{{ count($selectedBills) }}</span>
+                {{ count($selectedBills) === 1 ? 'conta selecionada' : 'contas selecionadas' }}
+                — Total a pagar:
+                <span class="font-semibold">R$ {{ number_format($selectedTotal, 2, ',', '.') }}</span>
+            </div>
+            <flux:button size="sm" variant="ghost" wire:click="clearSelection">Limpar seleção</flux:button>
+        </div>
+    @endif
+
     <div class="overflow-x-auto">
         <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
             <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
             <tr>
-                <th class="px-6 py-3">Descrição</th>
-                <th class="px-6 py-3">Categoria</th>
-                <th class="px-6 py-3">Valor</th>
-                <th class="px-6 py-3">Venc. Original</th>
-                <th class="px-6 py-3">Venc. Real (Útil)</th>
-                <th class="px-6 py-3">Recorrente?</th>
-                <th class="px-6 py-3">Status</th>
+                <th class="px-6 py-3 w-px"><span class="sr-only">Selecionar</span></th>
+                @foreach ($columns as $column)
+                    <th class="px-6 py-3">
+                        <button type="button" wire:click="sortBy('{{ $column['key'] }}')"
+                                class="inline-flex items-center gap-1 uppercase hover:text-gray-900 dark:hover:text-gray-200">
+                            {{ $column['label'] }}
+                            @if ($sortColumn === $column['key'])
+                                <span aria-hidden="true">{{ $sortDirection === 'asc' ? '▲' : '▼' }}</span>
+                            @else
+                                <span class="text-gray-300 dark:text-gray-600" aria-hidden="true">↕</span>
+                            @endif
+                        </button>
+                    </th>
+                @endforeach
                 <th class="px-6 py-3">Ações</th>
             </tr>
             </thead>
             <tbody>
             @forelse($bills as $bill)
-                <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                <tr wire:key="bill-{{ $bill->id }}" class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                    <td class="px-6 py-4">
+                        <flux:checkbox wire:model.live="selectedBills" value="{{ $bill->id }}" />
+                    </td>
                     <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">{{ $bill->display_description }}</td>
+                    <td class="px-6 py-4">
+                        {{ $bill->user?->name ?? '—' }}
+                        @if ($bill->user_id === auth()->id())
+                            <span class="text-xs text-gray-400">(você)</span>
+                        @endif
+                    </td>
                     <td class="px-6 py-4">{{ $bill->category?->name ?? '—' }}</td>
                     <td class="px-6 py-4">R$ {{ number_format($bill->value, 2, ',', '.') }}</td>
                     <td class="px-6 py-4">{{ $bill->due_date->format('d/m/Y') }}</td>
@@ -287,7 +402,7 @@ new class extends Component
                 </tr>
             @empty
                 <tr>
-                    <td colspan="8" class="px-6 py-4 text-center text-gray-500">
+                    <td colspan="10" class="px-6 py-4 text-center text-gray-500">
                         Nenhuma conta encontrada para os filtros selecionados.
                     </td>
                 </tr>
