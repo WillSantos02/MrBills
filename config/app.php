@@ -65,7 +65,9 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // Horário de Brasília: "hoje" decide status Vencido, ciclo de fatura do cartão e o horário dos comandos
+    // agendados (ex.: transporte de fatura vencida às 00:10) — em UTC tudo isso andava 3h adiantado.
+    'timezone' => env('APP_TIMEZONE', 'America/Sao_Paulo'),
 
     /*
     |--------------------------------------------------------------------------

@@ -135,6 +135,11 @@ querying/filtering/sorting for "when is this due" uses `actual_due_date`, not `d
 original/nominal date, `actual_due_date` is the business-day-adjusted one actually used for status and
 period logic.
 
+**App timezone is `America/Sao_Paulo`** (`config/app.php`, overridable via `APP_TIMEZONE`), not Laravel's
+default UTC: `today()` drives the derived "Vencido" status, credit card invoice cycles and the schedule times in
+`bootstrap/app.php` — under UTC the carry-over job (00:10) ran at 21:10 Brasília time and renegotiated invoices
+on the evening of their own due date.
+
 **Status is partly virtual**: `BillStatus` enum (`Pendente=1, Pago=2, Vencido=3, Renegociado=4`) is the
 persisted `status` column, but `Vencido` (overdue) is *never stored* — it's derived. A bill is only
 "Vencido" if its persisted status is still `Pendente` and `actual_due_date` is in the past.

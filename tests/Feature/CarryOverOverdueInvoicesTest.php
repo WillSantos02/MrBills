@@ -7,6 +7,7 @@ use App\Models\Bill;
 use App\Models\CreditCard;
 use App\Models\CreditCardPurchase;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -35,6 +36,21 @@ class CarryOverOverdueInvoicesTest extends TestCase
     {
         [$card, $invoice] = $this->cardWithInvoiceDueMarch17();
         $this->travelTo('2027-03-17 10:00:00');
+
+        $this->artisan('credit-cards:carry-over-overdue-invoices')->assertSuccessful();
+
+        $this->assertSame(BillStatus::Pendente, $invoice->fresh()->status);
+        $this->assertSame(0.0, $card->overdueBalance());
+    }
+
+    public function test_app_runs_on_brasilia_time_so_the_due_date_evening_is_not_overdue_yet(): void
+    {
+        $this->assertSame('America/Sao_Paulo', config('app.timezone'));
+
+        [$card, $invoice] = $this->cardWithInvoiceDueMarch17();
+
+        // 21:10 em Brasília = 00:10 UTC do dia seguinte: em UTC a fatura já contaria como vencida.
+        $this->travelTo(CarbonImmutable::parse('2027-03-17 21:10:00', 'America/Sao_Paulo'));
 
         $this->artisan('credit-cards:carry-over-overdue-invoices')->assertSuccessful();
 
