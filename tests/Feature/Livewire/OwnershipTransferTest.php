@@ -4,6 +4,8 @@ namespace Tests\Feature\Livewire;
 
 use App\Models\Bill;
 use App\Models\Category;
+use App\Models\CreditCard;
+use App\Models\CreditCardPurchase;
 use App\Models\Income;
 use App\Models\IncomeCategory;
 use App\Models\OwnershipTransferRequest;
@@ -139,6 +141,37 @@ class OwnershipTransferTest extends TestCase
         $this->assertSame(1, Category::where('user_id', $member->id)->where('name', 'Mercado')->count());
         $this->assertSame($memberCategory->id, $ownerBill->fresh()->category_id);
         $this->assertSame($memberCategory->id, $memberBill->fresh()->category_id);
+    }
+
+    public function test_accepting_transfer_moves_credit_cards_and_repoints_purchase_categories(): void
+    {
+        $owner = User::factory()->create();
+        $member = User::factory()->create(['family_owner_id' => $owner->id]);
+
+        $ownerCategory = Category::factory()->create(['user_id' => $owner->id, 'name' => 'Mercado']);
+        $memberCategory = Category::factory()->create(['user_id' => $member->id, 'name' => 'Mercado']);
+
+        $card = CreditCard::factory()->create(['user_id' => $owner->id]);
+        $purchase = CreditCardPurchase::factory()->create([
+            'credit_card_id' => $card->id,
+            'category_id' => $ownerCategory->id,
+        ]);
+
+        $transferRequest = OwnershipTransferRequest::factory()->create([
+            'from_user_id' => $owner->id,
+            'to_user_id' => $member->id,
+        ]);
+
+        $this->actingAs($member);
+        $member->notify(new OwnershipTransferRequestNotification($transferRequest));
+        $notification = $member->fresh()->unreadNotifications()->firstOrFail();
+
+        Livewire::test('notification-center')->call('acceptOwnershipTransfer', $notification->id);
+
+        $this->assertSame($member->id, $card->fresh()->user_id);
+        $this->assertSame($member->id, $purchase->fresh()->user_id);
+        $this->assertSame($memberCategory->id, $purchase->fresh()->category_id);
+        $this->assertSame($member->id, $purchase->fresh()->bill->user_id);
     }
 
     public function test_rejecting_transfer_stamps_declined_and_notifies_owner(): void

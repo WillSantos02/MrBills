@@ -146,6 +146,24 @@ component (see `⚡list-bills.blade.php::applyStatusFilter`) must reconstruct th
 attach `total_geral` and `total_mes_atual` aggregates without N+1 queries — reuse this instead of summing in
 PHP when a listing needs per-category totals.
 
+**Credit cards** (`/cartoes`, `CreditCard`/`CreditCardPurchase`): an invoice ("fatura") is **not** its own
+model — it's a regular `Bill` with `credit_card_id` set (unique per card + nominal `due_date`), so it shows up
+in Despesas, the dashboard's "Total a Pagar", the chart and due-soon notifications for free. Which invoice a
+purchase belongs to is derived from `purchase_date` + the card's `closing_day`/`due_day` + the installment
+offset (`CreditCard::invoiceDueDateFor($date, $offsetMonths)`; on/before closing → this cycle, after → next;
+days clamp to month length) in `CreditCardPurchase`'s `saving` hook, and the invoice `value` is re-summed from
+its purchases on every purchase save/delete (`Bill::syncInvoiceTotal()`, which also deletes an invoice left
+with no purchases) — never set an invoice's `value`/`due_date` directly. Installments
+(`CreditCardPurchase::createInstallments`, `installment_group_id`) follow the `Bill::createRecurrent` pattern.
+Used limit = purchases in `Pendente` invoices (`CreditCard::usedLimit()`). An invoice past `actual_due_date`
+still `Pendente` is turned `Renegociado` by the daily `credit-cards:carry-over-overdue-invoices` command, which
+adds a system "saldo anterior" purchase (`carried_from_bill_id`) to the next pending invoice — that's why
+`Renegociado` invoices don't count toward limit/total, and why `Bill`'s `updated` hook removes the carried line
+if a `Renegociado` invoice is later set back to `Pago`/`Pendente`. `⚡list-bills` only lets you change an
+invoice's status and refuses to delete it; a non-`Pendente` invoice is frozen. Card visuals are the anonymous
+`<x-credit-card>` component (`components/credit-card.blade.php`, color gradients live there because Tailwind
+only scans `resources/views`), used on `/cartoes` and in the dashboard carousel.
+
 **Notification center**: uses Laravel's built-in notifications (`User` has `Notifiable`; `notifications`
 table via `php artisan notifications:table`), not a custom model — the bell/badge UI
 (`⚡notification-center.blade.php`, included twice in `layouts/app/sidebar.blade.php` for desktop/mobile,

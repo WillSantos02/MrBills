@@ -35,6 +35,7 @@ new class extends Component
     public string $edit_due_date = '';
     public ?int $edit_category_id = null;
     public int $edit_status = 1;
+    public bool $editingIsInvoice = false;
 
     // Exclusão
     public ?int $deletingBillId = null;
@@ -166,7 +167,7 @@ new class extends Component
     {
         $familyUserIds = auth()->user()->familyGroupUserIds();
 
-        $query = Bill::with(['category', 'user'])->whereIn('user_id', $familyUserIds);
+        $query = Bill::with(['category', 'user', 'creditCard'])->whereIn('user_id', $familyUserIds);
 
         $this->applyPeriodFilter($query);
         $this->applyStatusFilter($query);
@@ -218,6 +219,7 @@ new class extends Component
         $this->edit_due_date = $bill->due_date->toDateString();
         $this->edit_category_id = $bill->category_id;
         $this->edit_status = $bill->status->value;
+        $this->editingIsInvoice = $bill->isInvoice();
     }
 
     public function cancelEdit(): void
@@ -229,11 +231,27 @@ new class extends Component
             'edit_due_date',
             'edit_category_id',
             'edit_status',
+            'editingIsInvoice',
         ]);
     }
 
     public function updateBill(): void
     {
+        $bill = Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($this->editingBillId);
+
+        // Fatura de cartão: valor/vencimento/descrição vêm das compras e do cartão — só o status é editável aqui.
+        if ($bill->isInvoice()) {
+            $this->validate([
+                'edit_status' => ['required', 'integer', Rule::enum(BillStatus::class)],
+            ]);
+
+            $bill->update(['status' => $this->edit_status]);
+
+            $this->cancelEdit();
+
+            return;
+        }
+
         $this->validate([
             'edit_description' => 'required|string|max:255',
             'edit_value' => 'required|numeric|min:0.01',
@@ -244,8 +262,6 @@ new class extends Component
             ],
             'edit_status' => 'required|integer',
         ]);
-
-        $bill = Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($this->editingBillId);
 
         $bill->update([
             'description' => $this->edit_description,
@@ -260,7 +276,10 @@ new class extends Component
 
     public function askDelete(int $billId): void
     {
-        $bill = Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())->findOrFail($billId);
+        // Fatura some sozinha quando a última compra é excluída — não se exclui direto por aqui.
+        $bill = Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())
+            ->whereNull('credit_card_id')
+            ->findOrFail($billId);
 
         $this->deletingBillId = $bill->id;
         $this->deletingIsRecurrent = filled($bill->recurrence_group_id);
@@ -274,6 +293,7 @@ new class extends Component
     public function deleteOnlyThis(): void
     {
         Bill::whereIn('user_id', auth()->user()->familyGroupUserIds())
+            ->whereNull('credit_card_id')
             ->where('id', $this->deletingBillId)
             ->delete();
 
@@ -372,7 +392,12 @@ new class extends Component
                     <td class="px-6 py-4">
                         <flux:checkbox wire:model.live="selectedBills" value="{{ $bill->id }}" />
                     </td>
-                    <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">{{ $bill->display_description }}</td>
+                    <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                        {{ $bill->display_description }}
+                        @if ($bill->isInvoice())
+                            <span class="ml-1 px-2 py-0.5 text-xs rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200">Fatura</span>
+                        @endif
+                    </td>
                     <td class="px-6 py-4">
                         {{ $bill->user?->name ?? '—' }}
                         @if ($bill->user_id === auth()->id())
@@ -394,9 +419,15 @@ new class extends Component
                             <button type="button" wire:click="editBill({{ $bill->id }})" class="text-blue-600 hover:underline dark:text-blue-400">
                                 Editar
                             </button>
-                            <button type="button" wire:click="askDelete({{ $bill->id }})" class="text-red-600 hover:underline dark:text-red-400">
-                                Excluir
-                            </button>
+                            @if ($bill->isInvoice())
+                                <a href="{{ route('cards.index') }}" wire:navigate class="text-violet-600 hover:underline dark:text-violet-400">
+                                    Compras
+                                </a>
+                            @else
+                                <button type="button" wire:click="askDelete({{ $bill->id }})" class="text-red-600 hover:underline dark:text-red-400">
+                                    Excluir
+                                </button>
+                            @endif
                         </div>
                     </td>
                 </tr>
@@ -415,24 +446,31 @@ new class extends Component
     @if ($editingBillId)
         <div class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50" wire:click.self="cancelEdit">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-lg">
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Editar Conta</h3>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">{{ $editingIsInvoice ? 'Editar Fatura' : 'Editar Conta' }}</h3>
 
                 <form wire:submit="updateBill" class="space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <flux:input wire:model="edit_description" label="Descrição" />
-                        <flux:input wire:model="edit_value" label="Valor" type="number" step="0.01" />
-                    </div>
+                    @if ($editingIsInvoice)
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            O valor e o vencimento da fatura vêm das compras do cartão — para alterá-los, edite as compras
+                            na tela de <a href="{{ route('cards.index') }}" wire:navigate class="text-violet-600 hover:underline dark:text-violet-400">Cartões</a>.
+                        </p>
+                    @else
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <flux:input wire:model="edit_description" label="Descrição" />
+                            <flux:input wire:model="edit_value" label="Valor" type="number" step="0.01" />
+                        </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <flux:input wire:model="edit_due_date" label="Data de Vencimento" type="date" />
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <flux:input wire:model="edit_due_date" label="Data de Vencimento" type="date" />
 
-                        <flux:select wire:model="edit_category_id" label="Categoria">
-                            <flux:select.option value="">Sem categoria</flux:select.option>
-                            @foreach ($categories as $category)
-                                <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
-                            @endforeach
-                        </flux:select>
-                    </div>
+                            <flux:select wire:model="edit_category_id" label="Categoria">
+                                <flux:select.option value="">Sem categoria</flux:select.option>
+                                @foreach ($categories as $category)
+                                    <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
+                                @endforeach
+                            </flux:select>
+                        </div>
+                    @endif
 
                     <flux:select wire:model="edit_status" label="Status">
                         @foreach ($statuses as $status)

@@ -176,6 +176,35 @@ revisitadas):
 
 ## Feature 1 — Cartões de Crédito
 
+> **Status**: implementada (2026-10-05). Tela `/cartoes` (item "Cartões" no menu). Cadastro com banco, 4
+> últimos dígitos, cor (escolhida pelo usuário — sem bandeira/tipo: todo cartão é crédito, e detectar bandeira
+> exigiria os 6 primeiros dígitos), limite opcional e dias de fechamento/vencimento. Compras com descrição,
+> valor, data, categoria e observação opcionais, à vista ou **parceladas** (valor total dividido, centavos
+> restantes na 1ª parcela; uma parcela por fatura, todas criadas de uma vez como em `Bill::createRecurrent`;
+> excluir pergunta "só esta" / "esta e as futuras", sem tocar parcelas de faturas pagas).
+>
+> **A fatura é uma `Bill` comum** (`bills.credit_card_id`, única por cartão + `due_date`), então aparece em
+> Despesas (selo "Fatura", só o status é editável, não pode ser excluída), no "Total a Pagar", no gráfico, em
+> "Contas Próximas" e nas notificações de vencimento. O valor é sempre a soma das compras; fatura sem compras é
+> excluída. Fatura paga fica congelada (não recebe compra nova, compras dela não são editáveis).
+>
+> **Limite**: em uso = soma das compras em faturas `Pendente` (parcelado ocupa o total de uma vez; pagar a
+> fatura libera). Compra/edição acima do disponível é bloqueada quando o cartão tem limite. Barra de progresso
+> no cartão (verde/âmbar/vermelho).
+>
+> **Fatura vencida sem pagamento**: o comando diário `credit-cards:carry-over-overdue-invoices` (00:10) marca a
+> fatura como `Renegociado` e lança "Saldo da fatura anterior" na próxima fatura pendente
+> (`credit_card_purchases.carried_from_bill_id`) — sem contagem dupla no Total a Pagar nem no limite. O cartão
+> mostra o aviso **FATURA PENDENTE** com o valor em aberto até a fatura que recebeu o saldo ser paga. Se a
+> fatura renegociada for marcada como paga depois, o saldo transportado (ainda pendente) é removido. Sem
+> juros/encargos.
+>
+> Dashboard tem carrossel de cartões. Cartões são compartilhados com a família e entram na transferência de
+> titularidade.
+>
+> **Fora de escopo / próximos passos**: juros do rotativo, e "Maiores Despesas por Categoria" no dashboard
+> considerar a categoria das compras (hoje a fatura entra sem categoria).
+
 ### Objetivo
 
 Implementar um módulo de gerenciamento de cartões de crédito, permitindo ao usuário cadastrar cartões, registrar compras e gerar automaticamente as faturas que serão pagas através da área de **Despesas**.
@@ -277,8 +306,8 @@ A cada nova compra adicionada ao cartão, o valor total da respectiva fatura dev
 
 > **Status**: fluxo de convite/aceite/recusa, vínculo de família e compartilhamento de Despesas/Receitas/
 > Categorias entre os membros implementados — ver seções "Concluído — Convites para Família" e "Concluído —
-> Compartilhamento de Dados da Família" acima. Falta só o compartilhamento de Cartões, que depende do
-> módulo de Cartões de Crédito (Feature 1) ainda não implementado.
+> Compartilhamento de Dados da Família" acima. Cartões (Feature 1) também já nascem compartilhados com a
+> família. Feature 2 está completa.
 
 ### Objetivo
 

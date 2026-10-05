@@ -3,6 +3,8 @@
 use App\Enums\BillStatus;
 use App\Models\Bill;
 use App\Models\Category;
+use App\Models\CreditCard;
+use App\Models\CreditCardPurchase;
 use App\Models\FamilyInvite;
 use App\Models\Income;
 use App\Models\IncomeCategory;
@@ -115,6 +117,7 @@ new class extends Component
 
                 if ($existing !== null) {
                     $category->bills()->update(['category_id' => $existing->id]);
+                    CreditCardPurchase::where('category_id', $category->id)->update(['category_id' => $existing->id]);
                     $category->delete();
                 } else {
                     $category->update(['user_id' => $toUser->id]);
@@ -134,6 +137,8 @@ new class extends Component
 
             Bill::where('user_id', $fromUser->id)->update(['user_id' => $toUser->id]);
             Income::where('user_id', $fromUser->id)->update(['user_id' => $toUser->id]);
+            CreditCard::where('user_id', $fromUser->id)->update(['user_id' => $toUser->id]);
+            CreditCardPurchase::where('user_id', $fromUser->id)->update(['user_id' => $toUser->id]);
 
             $toUser->update(['family_owner_id' => null]);
             User::where('family_owner_id', $fromUser->id)

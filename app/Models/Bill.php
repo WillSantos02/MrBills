@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class Bill extends Model
@@ -28,6 +29,7 @@ class Bill extends Model
         'recurrence_group_id',
         'status',
         'category_id',
+        'credit_card_id',
         'last_due_soon_notified_at',
     ];
 
@@ -53,6 +55,55 @@ class Bill extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * Cartão de crédito, quando esta conta é uma fatura.
+     *
+     * @return BelongsTo<CreditCard, $this>
+     */
+    public function creditCard(): BelongsTo
+    {
+        return $this->belongsTo(CreditCard::class);
+    }
+
+    /**
+     * Compras de cartão que compõem esta fatura.
+     *
+     * @return HasMany<CreditCardPurchase, $this>
+     */
+    public function purchases(): HasMany
+    {
+        return $this->hasMany(CreditCardPurchase::class);
+    }
+
+    /**
+     * Lançamento de saldo desta fatura numa fatura seguinte (quando ela venceu sem ser paga).
+     *
+     * @return HasOne<CreditCardPurchase, $this>
+     */
+    public function carriedPurchase(): HasOne
+    {
+        return $this->hasOne(CreditCardPurchase::class, 'carried_from_bill_id');
+    }
+
+    public function isInvoice(): bool
+    {
+        return $this->credit_card_id !== null;
+    }
+
+    /**
+     * Valor da fatura = soma das compras. Fatura sem nenhuma compra deixa de existir.
+     */
+    public function syncInvoiceTotal(): void
+    {
+        if (! $this->purchases()->exists()) {
+            $this->delete();
+
+            return;
+        }
+
+        $this->update(['value' => $this->purchases()->sum('value')]);
     }
 
     public function getEffectiveStatusAttribute(): BillStatus
@@ -123,6 +174,22 @@ class Bill extends Model
             }
 
             $bill->actual_due_date = $actualDate->toImmutable();
+        });
+
+        // Fatura renegociada (saldo já transportado pela CreditCard::carryOverOverdueInvoice) que volta a ser
+        // Pago/Pendente: o lançamento de saldo na fatura seguinte, se ainda pendente, sai — senão o valor
+        // seria cobrado duas vezes.
+        static::updated(function (Bill $bill) {
+            if (! $bill->isInvoice()
+                || ! $bill->wasChanged('status')
+                || $bill->getOriginal('status') !== BillStatus::Renegociado) {
+                return;
+            }
+
+            CreditCardPurchase::where('carried_from_bill_id', $bill->id)
+                ->whereHas('bill', fn ($q) => $q->where('status', BillStatus::Pendente->value))
+                ->get()
+                ->each(fn (CreditCardPurchase $purchase) => $purchase->delete());
         });
     }
 }

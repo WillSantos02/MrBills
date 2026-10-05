@@ -3,6 +3,7 @@
 use App\Enums\BillStatus;
 use App\Models\Bill;
 use App\Models\Category;
+use App\Models\CreditCard;
 use App\Models\Income;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -20,7 +21,8 @@ new class extends Component
 
         $now = now();
 
-        // KPI: Total a Pagar — contas pendentes com vencimento no mês atual.
+        // KPI: Total a Pagar — contas pendentes com vencimento no mês atual. Faturas de cartão são Bills
+        // comuns, então já entram aqui pelo vencimento delas.
         $totalAPagar = Bill::whereIn('user_id', $userIds)
             ->where('status', BillStatus::Pendente->value)
             ->whereYear('actual_due_date', $now->year)
@@ -78,7 +80,17 @@ new class extends Component
                 ];
             });
 
+        // Carrossel de cartões: ciclo aberto hoje (fatura que recebe as compras de agora) + fatura fechada
+        // que ainda não foi paga, se houver.
+        $cartoes = CreditCard::whereIn('user_id', $userIds)
+            ->orderBy('bank')
+            ->get()
+            ->map(fn (CreditCard $card) => ['card' => $card] + $card->displaySummary() + [
+                'closedInvoice' => $card->closedPendingInvoice(),
+            ]);
+
         return [
+            'cartoes' => $cartoes,
             'totalAPagar' => $totalAPagar,
             'totalCarteira' => $totalCarteira,
             'saldoMes' => $saldoMes,
@@ -126,6 +138,52 @@ new class extends Component
                 R$ {{ number_format($saldoMes, 2, ',', '.') }}
             </p>
         </div>
+    </div>
+
+    {{-- Cartões --}}
+    <div class="p-6 bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-zinc-900 dark:border-zinc-700"
+         x-data="{
+             scroll(direction) {
+                 const track = this.$refs.track;
+                 const step = (track.firstElementChild?.offsetWidth ?? 300) + 16;
+                 track.scrollBy({ left: direction * step, behavior: 'smooth' });
+             },
+         }">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Cartões de Crédito</h3>
+
+            @if ($cartoes->count() > 1)
+                <div class="flex gap-2">
+                    <flux:button size="sm" variant="ghost" icon="chevron-left" x-on:click="scroll(-1)" aria-label="Cartão anterior" />
+                    <flux:button size="sm" variant="ghost" icon="chevron-right" x-on:click="scroll(1)" aria-label="Próximo cartão" />
+                </div>
+            @endif
+        </div>
+
+        @if ($cartoes->isEmpty())
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+                Nenhum cartão cadastrado.
+                <a href="{{ route('cards.index') }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400">Cadastrar cartão</a>
+            </p>
+        @else
+            <div x-ref="track" class="flex gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 [scrollbar-width:thin]">
+                @foreach ($cartoes as $item)
+                    <a href="{{ route('cards.index') }}" wire:navigate wire:key="dash-card-{{ $item['card']->id }}"
+                       class="snap-start shrink-0 w-[85%] sm:w-80 transition hover:-translate-y-0.5">
+                        <x-credit-card :card="$item['card']" :total="$item['total']" :closing="$item['closing']" :due="$item['due']"
+                                       :used="$item['used']" :overdue="$item['overdue']" />
+
+                        @if ($item['closedInvoice'] && $item['overdue'] <= 0)
+                            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                Fatura fechada:
+                                <span class="font-medium text-red-600 dark:text-red-400">R$ {{ number_format($item['closedInvoice']->value, 2, ',', '.') }}</span>
+                                — vence {{ $item['closedInvoice']->actual_due_date->format('d/m/Y') }}
+                            </p>
+                        @endif
+                    </a>
+                @endforeach
+            </div>
+        @endif
     </div>
 
     {{-- Gráfico + Contas Próximas --}}

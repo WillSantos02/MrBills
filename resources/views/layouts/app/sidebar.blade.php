@@ -29,9 +29,9 @@
                         {{ __('Receitas') }}
                     </flux:sidebar.item>
 
-{{--                    <flux:sidebar.item icon="credit-card" :href="route('wallet.index')" :current="request()->routeIs('wallet.index')" wire:navigate>--}}
-{{--                        {{ __('Cartões') }}--}}
-{{--                    </flux:sidebar.item>--}}
+                    <flux:sidebar.item icon="credit-card" :href="route('cards.index')" :current="request()->routeIs('cards.index')" wire:navigate>
+                        {{ __('Cartões') }}
+                    </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
