@@ -58,6 +58,14 @@ App is then reachable at `https://mrbills.localhost` (`APP_DOMAIN` in `.env`; `*
 `compose.yaml` for `sail`/plain dev use — it adds the Vite/Postgres host port mappings and mounts the mkcert
 certs into Traefik, none of which apply in production.
 
+**Optional — access from other Tailscale devices**: set `TAILSCALE_DOMAIN` in `.env` to this machine's
+MagicDNS name (e.g. `host.tailnet.ts.net`); `compose.override.yaml` adds a second Traefik router
+(`core-tailscale`) matching that host. Then expose it on the host with
+`tailscale serve --bg https+insecure://localhost:443`. Tailscale terminates the client-facing TLS with its own
+valid `ts.net` certificate; the loopback hop to Traefik gets the default mkcert cert (issued only for
+`mrbills.localhost`), hence `https+insecure://` — plain `https://` fails verification, and an `http://localhost`
+target loops forever, because Traefik's `web` entrypoint redirects every request to HTTPS on the same host.
+
 ### Production deploy
 
 `compose.prod.yaml` is an explicit overlay (not auto-loaded) for a real VPS deploy: `restart: unless-stopped`

@@ -2,6 +2,18 @@ services:
     core:
         ports:
             - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
+        labels:
+            # Second router so the app also answers on this machine's Tailscale
+            # MagicDNS name (fronted by `tailscale serve` on the host, which
+            # preserves the Host header). Placeholder default keeps the rule
+            # valid when TAILSCALE_DOMAIN is unset. No certResolver: Traefik
+            # serves the default mkcert cert, which doesn't cover the ts.net
+            # name, so `tailscale serve` must target `https+insecure://` (it
+            # terminates the client-facing TLS with its own ts.net cert).
+            traefik.http.routers.core-tailscale.rule: 'Host(`${TAILSCALE_DOMAIN:-tailscale.invalid}`)'
+            traefik.http.routers.core-tailscale.entrypoints: 'websecure'
+            traefik.http.routers.core-tailscale.tls: 'true'
+            traefik.http.routers.core-tailscale.service: 'core'
     pgsql:
         ports:
             - '${FORWARD_DB_PORT:-5432}:5432'
