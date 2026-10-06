@@ -19,7 +19,7 @@
                 required
                 autofocus
                 autocomplete="email"
-                placeholder="email@example.com"
+                placeholder="voce@exemplo.com"
             />
 
             <!-- Password -->

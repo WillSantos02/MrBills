@@ -140,8 +140,8 @@ new class extends Component
 };
 ?>
 
-<div class="p-6 bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-zinc-900 dark:border-zinc-700">
-    <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Meus Cartões</h3>
+<div class="glass-panel animate-rise rounded-3xl p-6">
+    <h3 class="text-lg font-bold text-foreground mb-4">Meus Cartões</h3>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
         @forelse ($cards as $item)
@@ -173,9 +173,9 @@ new class extends Component
 
     {{-- Modal de Edição --}}
     @if ($editingCardId)
-        <div class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50" wire:click.self="cancelEdit">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-lg">
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Editar Cartão</h3>
+        <div class="fixed inset-0 bg-foreground/35 backdrop-blur-sm p-4 flex items-center justify-center z-50" wire:click.self="cancelEdit">
+            <div class="modal-panel rounded-3xl p-6 w-full max-w-lg">
+                <h3 class="text-lg font-bold text-foreground mb-4">Editar Cartão</h3>
 
                 <form wire:submit="updateCard" class="space-y-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -206,9 +206,9 @@ new class extends Component
 
     {{-- Modal de Exclusão --}}
     @if ($deletingCardId)
-        <div class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50" wire:click.self="cancelDelete">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md">
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Excluir Cartão</h3>
+        <div class="fixed inset-0 bg-foreground/35 backdrop-blur-sm p-4 flex items-center justify-center z-50" wire:click.self="cancelDelete">
+            <div class="modal-panel rounded-3xl p-6 w-full max-w-md">
+                <h3 class="text-lg font-bold text-foreground mb-2">Excluir Cartão</h3>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
                     Todas as compras deste cartão serão excluídas.
                     @if ($deletingPendingInvoices > 0)

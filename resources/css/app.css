@@ -8,32 +8,130 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Identidade visual MrBills (ver o protótipo mr.-bills-dashboard): fundo azul-acinzentado, painéis de vidro,
+ * accent azul, status pago/a vencer/atrasado e o mascote boleto de cartola. Os valores de cada tema ficam
+ * em :root/.dark; o @theme inline só expõe esses tokens como utilitários (bg-surface, text-late, ...).
+ */
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-    --color-zinc-50: #fafafa;
-    --color-zinc-100: #f5f5f5;
-    --color-zinc-200: #e5e5e5;
-    --color-zinc-300: #d4d4d4;
-    --color-zinc-400: #a3a3a3;
-    --color-zinc-500: #737373;
-    --color-zinc-600: #525252;
-    --color-zinc-700: #404040;
-    --color-zinc-800: #262626;
-    --color-zinc-900: #171717;
-    --color-zinc-950: #0a0a0a;
+    /* O Flux pinta tudo com zinc (e as telas antigas usam gray): os dois apontam para a escala slate,
+       que é a mesma base azulada do protótipo. */
+    --color-zinc-50: oklch(0.984 0.003 247.858);
+    --color-zinc-100: oklch(0.968 0.007 247.896);
+    --color-zinc-200: oklch(0.929 0.013 255.508);
+    --color-zinc-300: oklch(0.869 0.022 252.894);
+    --color-zinc-400: oklch(0.704 0.04 256.788);
+    --color-zinc-500: oklch(0.554 0.046 257.417);
+    --color-zinc-600: oklch(0.446 0.043 257.281);
+    --color-zinc-700: oklch(0.372 0.044 257.287);
+    --color-zinc-800: oklch(0.279 0.041 260.031);
+    --color-zinc-900: oklch(0.208 0.042 265.755);
+    --color-zinc-950: oklch(0.129 0.042 264.695);
 
-    --color-accent: var(--color-neutral-800);
-    --color-accent-content: var(--color-neutral-800);
-    --color-accent-foreground: var(--color-white);
+    --color-gray-50: oklch(0.984 0.003 247.858);
+    --color-gray-100: oklch(0.968 0.007 247.896);
+    --color-gray-200: oklch(0.929 0.013 255.508);
+    --color-gray-300: oklch(0.869 0.022 252.894);
+    --color-gray-400: oklch(0.704 0.04 256.788);
+    --color-gray-500: oklch(0.554 0.046 257.417);
+    --color-gray-600: oklch(0.446 0.043 257.281);
+    --color-gray-700: oklch(0.372 0.044 257.287);
+    --color-gray-800: oklch(0.279 0.041 260.031);
+    --color-gray-900: oklch(0.208 0.042 265.755);
+    --color-gray-950: oklch(0.129 0.042 264.695);
+
+    --radius-4xl: 2rem;
+
+    --animate-rise: rise 0.5s cubic-bezier(0.32, 0.72, 0, 1) both;
+    --animate-mascot-tip: mascot-tip 4s ease-in-out infinite;
+
+    @keyframes rise {
+        from { opacity: 0; transform: translateY(16px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes mascot-tip {
+        0%, 100% { transform: rotate(0deg) translateY(0); }
+        50% { transform: rotate(-2deg) translateY(-3px); }
+    }
 }
 
+@theme inline {
+    --color-background: var(--mb-background);
+    --color-foreground: var(--mb-foreground);
+    --color-muted-foreground: var(--mb-muted-foreground);
+    --color-surface: var(--mb-surface);
+    --color-popover: var(--mb-popover);
+    --color-line: var(--mb-line);
+    --color-primary: var(--mb-primary);
+    --color-primary-foreground: var(--mb-primary-foreground);
+    --color-paid: var(--mb-paid);
+    --color-due: var(--mb-due);
+    --color-late: var(--mb-late);
+    --color-renegotiated: var(--mb-renegotiated);
+    --color-accent-hover: var(--mb-accent-hover);
+    --color-mascot-hat: var(--mb-mascot-hat);
+    --color-mascot-ink: var(--mb-mascot-ink);
+    --color-mascot-paper: var(--mb-mascot-paper);
+
+}
+
+/* Tokens que o Flux lê para botões primários, links, foco etc. Ficam em @layer theme (e não no @theme acima)
+   porque o flux.css também define --color-accent dentro de .dark e venceria a declaração do :root. */
 @layer theme {
+    :root,
     .dark {
-        --color-accent: var(--color-white);
-        --color-accent-content: var(--color-white);
-        --color-accent-foreground: var(--color-neutral-800);
+        --color-accent: var(--mb-accent);
+        --color-accent-content: var(--mb-accent-content);
+        --color-accent-foreground: var(--mb-accent-foreground);
     }
+}
+
+:root {
+    --mb-background: oklch(0.944 0.017 250.8);
+    --mb-foreground: oklch(0.196 0.033 252.4);
+    --mb-muted-foreground: oklch(0.51 0.04 250.5);
+    --mb-surface: oklch(0.976 0.011 250.1 / 78%);
+    --mb-popover: oklch(0.985 0.008 250.1);
+    --mb-line: oklch(1 0 0);
+    --mb-primary: oklch(0.454 0.082 198.7);
+    --mb-primary-foreground: oklch(0.975 0.014 176.2);
+    --mb-accent: oklch(0.494 0.201 259.1);
+    --mb-accent-hover: oklch(0.45 0.196 259.1);
+    --mb-accent-content: oklch(0.494 0.201 259.1);
+    --mb-accent-foreground: oklch(0.985 0 0);
+    --mb-paid: oklch(0.57 0.132 161.5);
+    --mb-due: oklch(0.494 0.201 259.1);
+    --mb-late: oklch(0.52 0.19 27.2);
+    --mb-renegotiated: oklch(0.58 0.14 70);
+    --mb-mascot-hat: oklch(0.196 0.033 252.4);
+    --mb-mascot-ink: oklch(0.196 0.033 252.4);
+    --mb-mascot-paper: oklch(0.975 0.014 176.2);
+}
+
+.dark {
+    --mb-background: oklch(0.129 0.042 264.695);
+    --mb-foreground: oklch(0.984 0.003 247.858);
+    --mb-muted-foreground: oklch(0.704 0.04 256.788);
+    --mb-surface: oklch(0.208 0.042 265.755 / 72%);
+    --mb-popover: oklch(0.208 0.042 265.755);
+    --mb-line: oklch(0.372 0.044 257.287);
+    --mb-primary: oklch(0.74 0.11 190);
+    --mb-primary-foreground: oklch(0.196 0.033 252.4);
+    --mb-accent: oklch(0.62 0.19 259.1);
+    --mb-accent-hover: oklch(0.57 0.19 259.1);
+    --mb-accent-content: oklch(0.72 0.15 259.1);
+    --mb-accent-foreground: oklch(0.985 0 0);
+    --mb-paid: oklch(0.72 0.15 161.5);
+    --mb-due: oklch(0.72 0.15 259.1);
+    --mb-late: oklch(0.7 0.17 27.2);
+    --mb-renegotiated: oklch(0.78 0.14 75);
+    --mb-mascot-hat: oklch(0.42 0.06 259);
+    --mb-mascot-ink: oklch(0.196 0.033 252.4);
+    --mb-mascot-paper: oklch(0.975 0.014 176.2);
 }
 
 @layer base {
@@ -45,6 +143,49 @@
     ::file-selector-button {
         border-color: var(--color-gray-200, currentColor);
     }
+
+    .dark *,
+    .dark ::after,
+    .dark ::before {
+        border-color: var(--color-gray-700, currentColor);
+    }
+
+    body {
+        background-color: var(--color-background);
+        color: var(--color-foreground);
+        font-family: var(--font-sans);
+    }
+
+    button:not(:disabled),
+    a {
+        cursor: pointer;
+    }
+}
+
+/* Painel de vidro: o "card" padrão do app (dashboard, listagens, formulários). */
+@utility glass-panel {
+    background: var(--color-surface);
+    border: 1px solid color-mix(in oklab, var(--color-line) 70%, transparent);
+    box-shadow:
+        0 18px 45px -30px color-mix(in oklab, var(--color-foreground) 30%, transparent),
+        inset 0 1px 0 color-mix(in oklab, var(--color-line) 70%, transparent);
+    backdrop-filter: blur(18px);
+}
+
+/* Versão opaca para modais, que ficam sobre um overlay borrado. */
+@utility modal-panel {
+    background: var(--color-popover);
+    border: 1px solid color-mix(in oklab, var(--color-line) 70%, transparent);
+    box-shadow: 0 30px 80px -30px color-mix(in oklab, var(--color-foreground) 45%, transparent);
+}
+
+/* Rótulo "eyebrow" em mono caixa-alta usado acima de valores e títulos de seção. */
+@utility eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--color-muted-foreground);
 }
 
 [data-flux-field]:not(ui-radio, ui-checkbox) {
@@ -55,12 +196,21 @@
     @apply  !mb-0 !leading-tight;
 }
 
+/* Botões em pílula, como no protótipo. */
+[data-flux-button] {
+    @apply rounded-full;
+}
+
 input:focus[data-flux-control],
 textarea:focus[data-flux-control],
 select:focus[data-flux-control] {
-    @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
+    @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-background;
 }
 
-/* \[:where(&)\]:size-4 {
-    @apply size-4;
-} */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-delay: 0s !important;
+        animation-iteration-count: 1 !important;
+    }
+}

@@ -15,4 +15,12 @@ class ExampleTest extends TestCase
 
         $response->assertOk();
     }
+
+    public function test_unknown_route_renders_branded_error_page(): void
+    {
+        $this->get('/rota-que-nao-existe')
+            ->assertNotFound()
+            ->assertSee('erro 404')
+            ->assertSee('Página não encontrada');
+    }
 }

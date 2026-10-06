@@ -179,13 +179,13 @@ new class extends Component
 };
 ?>
 
-<div class="p-6 bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-zinc-900 dark:border-zinc-700">
+<div class="glass-panel animate-rise rounded-3xl p-6">
     <div class="flex justify-between items-center mb-4">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Minhas Entradas</h3>
+        <h3 class="text-lg font-bold text-foreground">Minhas Entradas</h3>
     </div>
 
     {{-- Filtros --}}
-    <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div class="mb-4 p-4 bg-line/35 ring-1 ring-line/60 rounded-2xl grid grid-cols-1 md:grid-cols-4 gap-4">
         <flux:select wire:model.live="periodType" label="Período">
             <flux:select.option value="geral">Geral</flux:select.option>
             <flux:select.option value="mes_atual">Mês Atual</flux:select.option>
@@ -212,7 +212,7 @@ new class extends Component
 
     <div class="overflow-x-auto">
         <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-            <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+            <thead class="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground bg-line/40">
             <tr>
                 <th class="px-6 py-3">Descrição</th>
                 <th class="px-6 py-3">Categoria</th>
@@ -224,7 +224,7 @@ new class extends Component
             </thead>
             <tbody>
             @forelse($incomes as $income)
-                <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                <tr class="border-b border-line/70 transition-colors hover:bg-line/30">
                     <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">{{ $income->display_description }}</td>
                     <td class="px-6 py-4">{{ $income->category?->name ?? '—' }}</td>
                     <td class="px-6 py-4">R$ {{ number_format($income->value, 2, ',', '.') }}</td>
@@ -254,9 +254,9 @@ new class extends Component
 
     {{-- Modal de Edição --}}
     @if ($editingIncomeId)
-        <div class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50" wire:click.self="cancelEdit">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-lg">
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Editar Entrada</h3>
+        <div class="fixed inset-0 bg-foreground/35 backdrop-blur-sm p-4 flex items-center justify-center z-50" wire:click.self="cancelEdit">
+            <div class="modal-panel rounded-3xl p-6 w-full max-w-lg">
+                <h3 class="text-lg font-bold text-foreground mb-4">Editar Entrada</h3>
 
                 <form wire:submit="updateIncome" class="space-y-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -286,9 +286,9 @@ new class extends Component
 
     {{-- Modal de Exclusão --}}
     @if ($deletingIncomeId)
-        <div class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50" wire:click.self="cancelDelete">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md">
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Excluir Entrada</h3>
+        <div class="fixed inset-0 bg-foreground/35 backdrop-blur-sm p-4 flex items-center justify-center z-50" wire:click.self="cancelDelete">
+            <div class="modal-panel rounded-3xl p-6 w-full max-w-md">
+                <h3 class="text-lg font-bold text-foreground mb-2">Excluir Entrada</h3>
 
                 @if ($deletingIsRecurrent)
                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">

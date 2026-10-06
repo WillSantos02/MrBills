@@ -95,14 +95,14 @@ new class extends Component
 };
 ?>
 
-<div class="p-6 bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-zinc-900 dark:border-zinc-700">
+<div class="glass-panel animate-rise rounded-3xl p-6">
     <div class="flex justify-between items-center mb-4">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Categorias de Despesa (Contas)</h3>
+        <h3 class="text-lg font-bold text-foreground">Categorias de Despesa (Contas)</h3>
     </div>
 
     <div class="overflow-x-auto">
         <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-            <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+            <thead class="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground bg-line/40">
             <tr>
                 <th class="px-6 py-3">Categoria</th>
                 <th class="px-6 py-3">Total Geral</th>
@@ -112,7 +112,7 @@ new class extends Component
             </thead>
             <tbody>
             @forelse($categories as $category)
-                <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                <tr class="border-b border-line/70 transition-colors hover:bg-line/30">
                     <td class="px-6 py-4 font-medium text-gray-900 dark:text-white">{{ $category->name }}</td>
                     <td class="px-6 py-4">R$ {{ number_format($category->total_geral ?? 0, 2, ',', '.') }}</td>
                     <td class="px-6 py-4">R$ {{ number_format($category->total_mes_atual ?? 0, 2, ',', '.') }}</td>
@@ -140,9 +140,9 @@ new class extends Component
 
     {{-- Modal de Edição --}}
     @if ($editingCategoryId)
-        <div class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50" wire:click.self="cancelEditCategory">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md">
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Editar Categoria</h3>
+        <div class="fixed inset-0 bg-foreground/35 backdrop-blur-sm p-4 flex items-center justify-center z-50" wire:click.self="cancelEditCategory">
+            <div class="modal-panel rounded-3xl p-6 w-full max-w-md">
+                <h3 class="text-lg font-bold text-foreground mb-4">Editar Categoria</h3>
 
                 <form wire:submit="updateCategory" class="space-y-4">
                     <flux:input wire:model="edit_name" label="Nome da Categoria" />
@@ -158,9 +158,9 @@ new class extends Component
 
     {{-- Modal de Exclusão --}}
     @if ($deletingCategoryId)
-        <div class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50" wire:click.self="cancelDeleteCategory">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md">
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Excluir Categoria</h3>
+        <div class="fixed inset-0 bg-foreground/35 backdrop-blur-sm p-4 flex items-center justify-center z-50" wire:click.self="cancelDeleteCategory">
+            <div class="modal-panel rounded-3xl p-6 w-full max-w-md">
+                <h3 class="text-lg font-bold text-foreground mb-2">Excluir Categoria</h3>
 
                 <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
                     Tem certeza que deseja excluir "{{ $deletingCategoryName }}"?

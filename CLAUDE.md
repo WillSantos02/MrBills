@@ -21,6 +21,10 @@ named `core` (`APP_SERVICE=core` in `.env`), not the Sail default `laravel.test`
 ## Commands
 
 Run via Sail if the containers are up, otherwise plain `php artisan` / `composer` on the host.
+Inside the container, always run as the `sail` user (`vendor/bin/sail ...` or `docker compose exec --user sail core ...`):
+plain `docker compose exec core` runs as root, and compiled views/cache files it writes under `storage/` can't be
+rewritten by the app or the test suite afterwards (`tempnam()`/`touch(): Utime failed` errors) — fix with
+`docker compose exec core chown -R sail:sail storage bootstrap/cache`.
 
 ```bash
 composer lint          # pint --parallel (auto-fix code style)
@@ -119,6 +123,24 @@ Pages under `resources/views/*.blade.php` (`contas.blade.php`, `categorias.blade
 `x-layouts::app` layout. Routes (`routes/web.php`) map directly to these page views via `Route::view(...)`
 under the `auth`+`verified` middleware group — there are no dedicated controllers for the app's core features.
 
+**Visual identity** follows the Lovable prototype at `github.com/WillSantos02/mr.-bills-dashboard` (React; used only
+as a design reference, nothing is imported from it): a boleto-with-top-hat mascot (`<x-app-logo-icon>`, also
+`public/favicon.*`), Inter + JetBrains Mono, bluish glass panels, and a sticky top header with pill navigation
+(`layouts/app/header.blade.php` — there is no sidebar; on mobile the same `$navItems` feed a Flux drawer). Tokens
+live in `resources/css/app.css` as `--mb-*` per theme (`:root`/`.dark`), exposed as utilities (`bg-surface`,
+`text-muted-foreground`, `bg-line/40`, `text-paid`/`text-due`/`text-late`) plus `glass-panel` (the standard card),
+`modal-panel`, `eyebrow` (mono uppercase label) and `animate-rise`. Tailwind's `zinc` and `gray` scales are
+remapped to `slate` so Flux and older markup inherit the bluish tone; Flux's `--color-accent*` are pinned in
+`@layer theme` because `flux.css` redefines them under `.dark`. Use these tokens instead of raw
+`bg-white`/`dark:bg-zinc-900` in new UI. Custom error pages are in `resources/views/errors/` — each status the
+framework ships its own view for (401/402/403/404/419/429/500/503) needs its own file, because Laravel resolves
+`errors::404` before falling back to `errors::4xx`.
+
+**Locale is `pt_BR`** (`config/app.php` default and `APP_LOCALE`). Starter-kit/Fortify/passkey/e-mail strings stay
+as English keys in `__()` and are translated in `lang/pt_BR.json`; validation, auth, password-reset and pagination
+messages live in `lang/pt_BR/*.php` (`validation.php` also maps field names, including the `edit_*` ones, to
+Portuguese `attributes`). Add new `__()` keys to `lang/pt_BR.json` — a missing key silently renders in English.
+
 **Domain model**: `Bill` and `Income` are the two transactional entities, each scoped to `user_id` and each
 belonging to its own category (`Category` / `IncomeCategory` respectively — separate tables, not shared).
 Both support recurring/installment entries via a shared pattern:
@@ -171,8 +193,8 @@ only scans `resources/views`), used on `/cartoes` and in the dashboard carousel.
 
 **Notification center**: uses Laravel's built-in notifications (`User` has `Notifiable`; `notifications`
 table via `php artisan notifications:table`), not a custom model — the bell/badge UI
-(`⚡notification-center.blade.php`, included twice in `layouts/app/sidebar.blade.php` for desktop/mobile,
-same duplication pattern as the user menu there) reads `auth()->user()->unreadNotifications()`.
+(`⚡notification-center.blade.php`, included once in the top header of `layouts/app/header.blade.php`, which
+serves desktop and mobile) reads `auth()->user()->unreadNotifications()`.
 `App\Notifications\BillDueSoonNotification` implements `ShouldQueue`, so sending one actually round-trips
 through RabbitMQ. The scheduled command `App\Console\Commands\SendBillDueSoonNotifications`
 (`notifications:send-bill-due-soon`, registered daily at 08:00 in `bootstrap/app.php`) notifies `Pendente`

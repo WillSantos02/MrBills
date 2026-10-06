@@ -136,8 +136,8 @@ new class extends Component
 };
 ?>
 
-<div class="p-6 bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-zinc-900 dark:border-zinc-700">
-    <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Nova Compra no Cartão</h3>
+<div class="glass-panel animate-rise rounded-3xl p-6">
+    <h3 class="text-lg font-bold text-foreground mb-4">Nova Compra no Cartão</h3>
 
     @if ($cards->isEmpty())
         <p class="text-sm text-gray-500 dark:text-gray-400">Cadastre um cartão para começar a registrar compras.</p>
