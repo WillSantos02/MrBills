@@ -174,6 +174,36 @@ revisitadas):
 
 ---
 
+## Concluído — Gasto Pontual e Conta Fixa (2026-11-12)
+
+* **Situação no cadastro ("A pagar" / "Já pago")**: o formulário "Nova Conta" ganhou um seletor de Situação.
+  Uma conta única lançada como **Já pago** é um **gasto pontual** (padaria, Pix, débito na hora):
+  `bills.is_spot = true`, status `Pago`, data pré-preenchida com hoje e **sem rollover de fim de semana** (é a
+  data em que o gasto aconteceu, não um vencimento). "Vencido" continua derivado, não é opção de cadastro.
+  Em parcelada/fixa, "Já pago" marca só a 1ª ocorrência.
+* **Tipo de conta "Única / Parcelada / Fixa"** (seletor com ícones no lugar do antigo checkbox "recorrente").
+  **Conta fixa** = mensal sem fim (energia, água, aluguel): molde em `fixed_bills` (`App\Models\FixedBill`) +
+  ocorrências que são `Bill`s comuns (`is_fixed = true`, mesmo `recurrence_group_id`). Mês atual + 11 seguintes
+  ficam sempre gerados; o comando diário `recurrences:generate-fixed` (00:20) estende a janela. O molde guarda
+  `last_generated_occurrence`, então excluir uma ocorrência avulsa não faz o gerador recriá-la; "excluir esta e
+  as futuras" apaga o molde e encerra a série. Ao editar uma ocorrência, "aplicar às próximas" atualiza
+  descrição/valor/categoria das futuras pendentes e do molde.
+* **Despesas**: coluna "Recorrente?" virou "Tipo" (Única/Pontual/Parcelada/Fixa/Fatura, com ícone) e há um
+  filtro por tipo. O molde entra na transferência de titularidade (dono e merge de categorias).
+* **Receita Fixa**: mesmo mecanismo em Receitas (`App\Models\FixedIncome`, `fixed_incomes`, `incomes.is_fixed`)
+  — seletor "Única / Recorrente / Fixa", coluna e filtro "Tipo", "aplicar aos próximos" e "este e os futuros"
+  encerrando a série. A lógica da janela móvel é compartilhada pelo trait
+  `App\Models\Concerns\GeneratesFixedOccurrences`; um único comando (`recurrences:generate-fixed`) estende as
+  duas.
+* **Changelog**: `CHANGELOG.md` (voltado ao usuário final, em pt_BR) é renderizado no app em `/novidades` (menu do
+  perfil → "Novidades"). Toda versão nova deve ganhar uma seção lá. Esta entrega é a **v1.1.0**.
+* **Bug de deploy corrigido**: em produção o `core` roda Octane (Swoole), que mantém as classes PHP em memória —
+  a view nova chamou `Bill::kindLabel()` num model antigo e Despesas deu 500. Todo deploy precisa de
+  `php artisan migrate --force` + `php artisan octane:reload --server=swoole` (e `npm run build` se houver
+  classe Tailwind nova).
+
+---
+
 ## Feature 1 — Cartões de Crédito
 
 > **Status**: implementada (2026-10-05). Tela `/cartoes` (item "Cartões" no menu). Cadastro com banco, 4

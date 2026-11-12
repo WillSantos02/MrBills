@@ -2,6 +2,7 @@
 
 use App\Console\Commands\AlertFailedJobs;
 use App\Console\Commands\CarryOverOverdueInvoices;
+use App\Console\Commands\GenerateFixedEntries;
 use App\Console\Commands\SendBillDueSoonNotifications;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->command(CarryOverOverdueInvoices::class)->dailyAt('00:10');
+        $schedule->command(GenerateFixedEntries::class)->dailyAt('00:20');
         $schedule->command(SendBillDueSoonNotifications::class)->dailyAt('08:00');
         $schedule->command(AlertFailedJobs::class)->dailyAt('09:00');
     })

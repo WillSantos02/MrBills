@@ -12,6 +12,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('carteira', 'carteira')->name('wallet.index');
     Route::view('cartoes', 'cartoes')->name('cards.index');
     Route::view('familia', 'familia')->name('family.index');
+    Route::view('novidades', 'novidades')->name('changelog');
 });
 
 require __DIR__.'/settings.php';

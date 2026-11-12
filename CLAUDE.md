@@ -102,6 +102,13 @@ is meant to run daily via host crontab, e.g. `0 3 * * * cd /path/to/project && d
 Local-only for now (no off-site copy — see `Roadmap.md` for that as tracked tech debt). Restore:
 `gunzip -c backups/mrbills-<timestamp>.sql.gz | docker compose exec -T pgsql psql -U "$DB_USERNAME" -d "$DB_DATABASE"`.
 
+**Deploying code changes to a running prod stack**: `core` runs Octane (Swoole), which keeps PHP classes in
+worker memory while Blade views are re-read from disk — after pulling new code, a view can call a model method
+the in-memory class doesn't have yet (500). Always run `php artisan migrate --force`,
+`php artisan octane:reload --server=swoole` (the flag is required — without it Octane assumes RoadRunner and fails
+with `Undefined array key "rpcPort"`), and `npm run build` if any new Tailwind class was added (`public/build` is
+gitignored).
+
 **Health/monitoring**: `core` has a Docker `healthcheck:` (`curl -f http://localhost/up`, the health route
 Laravel registers via `health: '/up'` in `bootstrap/app.php`) so Compose/Traefik notice if it stops
 responding. The scheduled `queue:alert-failed` command (`app/Console/Commands/AlertFailedJobs.php`, daily at
@@ -150,6 +157,20 @@ Both support recurring/installment entries via a shared pattern:
 - A `siblings()` relation (`hasMany` keyed on `recurrence_group_id`) to fetch the rest of the group — used
   when deleting "this and future" installments (see `⚡list-bills.blade.php`'s `deleteThisAndFuture`).
 - A `getDisplayDescriptionAttribute()` accessor that appends ` - {current}/{total}` when recurrent.
+
+**Spot expenses and fixed bills** (Bill only): a single bill created already `Pago` is a "gasto pontual"
+(`is_spot = true`) and skips the weekend rollover below — its date is when the spending happened. A **fixed bill**
+(`is_fixed = true`, "Conta Fixa") is open-ended monthly: unlike `createRecurrent` it can't be pre-generated in
+full, so a `FixedBill` template row (`fixed_bills`, keyed by `recurrence_group_id`) generates occurrences up to a
+rolling 12-month horizon (`FixedBill::generateOccurrences`, daily `recurrences:generate-fixed`), always anchored on
+`start_date` and tracked by `last_generated_occurrence` (so deleted occurrences aren't recreated). Deleting "this
+and future" deletes the template = ends the series. Fixed occurrences have `is_recurrent = true`,
+`total_installments = 0` and no "n/total" suffix; `current_installments` is just the sequence number.
+`Income` has the same thing (`is_fixed`, `FixedIncome`/`fixed_incomes`); the window logic is shared by the
+`App\Models\Concerns\GeneratesFixedOccurrences` trait and both are extended by one command.
+
+**Changelog**: `CHANGELOG.md` (user-facing, pt_BR) is rendered in-app at `/novidades` (route `changelog`, linked
+from the profile menu). Add a section there for every release.
 
 **Bill-specific business rule**: `Bill::boot()` hooks `static::saving` to compute `actual_due_date` from
 `due_date`, rolling weekend due dates forward to the following Monday (Carbon `next(Carbon::MONDAY)`). All

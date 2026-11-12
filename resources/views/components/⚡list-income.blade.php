@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\FixedIncome;
 use App\Models\Income;
 use App\Models\IncomeCategory;
 use Illuminate\Database\Eloquent\Builder;
@@ -15,6 +16,7 @@ new class extends Component
     public string $periodStart = '';
     public string $periodEnd = '';
     public string $categoryFilter = '';
+    public string $kindFilter = ''; // '' | unica | recorrente | fixa
 
     // Edição
     public ?int $editingIncomeId = null;
@@ -22,10 +24,13 @@ new class extends Component
     public string $edit_value = '';
     public string $edit_date = '';
     public ?int $edit_income_category_id = null;
+    public bool $editingIsFixed = false;
+    public bool $edit_apply_to_future = false;
 
     // Exclusão
     public ?int $deletingIncomeId = null;
     public bool $deletingIsRecurrent = false;
+    public bool $deletingIsFixed = false;
 
     public function mount(): void
     {
@@ -87,6 +92,13 @@ new class extends Component
             $query->where('income_category_id', $this->categoryFilter);
         }
 
+        match ($this->kindFilter) {
+            'fixa' => $query->where('is_fixed', true),
+            'recorrente' => $query->where('is_recurrent', true)->where('is_fixed', false),
+            'unica' => $query->where('is_recurrent', false),
+            default => null,
+        };
+
         return [
             'incomes' => $query->orderBy('date')->get(),
             'incomeCategories' => IncomeCategory::whereIn('user_id', $familyUserIds)
@@ -104,6 +116,8 @@ new class extends Component
         $this->edit_value = (string) $income->value;
         $this->edit_date = $income->date->toDateString();
         $this->edit_income_category_id = $income->income_category_id;
+        $this->editingIsFixed = $income->is_fixed;
+        $this->edit_apply_to_future = false;
     }
 
     public function cancelEdit(): void
@@ -114,6 +128,8 @@ new class extends Component
             'edit_value',
             'edit_date',
             'edit_income_category_id',
+            'editingIsFixed',
+            'edit_apply_to_future',
         ]);
     }
 
@@ -138,6 +154,21 @@ new class extends Component
             'income_category_id' => $this->edit_income_category_id,
         ]);
 
+        // Receita fixa: reajuste (aumento de salário...) vale para os próximos lançamentos e para o molde.
+        if ($income->is_fixed && $this->edit_apply_to_future) {
+            $changes = [
+                'description' => $this->edit_description,
+                'value' => $this->edit_value,
+                'income_category_id' => $this->edit_income_category_id,
+            ];
+
+            Income::where('recurrence_group_id', $income->recurrence_group_id)
+                ->where('current_installments', '>', $income->current_installments)
+                ->update($changes);
+
+            FixedIncome::where('recurrence_group_id', $income->recurrence_group_id)->update($changes);
+        }
+
         $this->cancelEdit();
     }
 
@@ -147,11 +178,12 @@ new class extends Component
 
         $this->deletingIncomeId = $income->id;
         $this->deletingIsRecurrent = filled($income->recurrence_group_id);
+        $this->deletingIsFixed = $income->is_fixed;
     }
 
     public function cancelDelete(): void
     {
-        $this->reset(['deletingIncomeId', 'deletingIsRecurrent']);
+        $this->reset(['deletingIncomeId', 'deletingIsRecurrent', 'deletingIsFixed']);
     }
 
     public function deleteOnlyThis(): void
@@ -173,6 +205,11 @@ new class extends Component
             ->where('recurrence_group_id', $income->recurrence_group_id)
             ->where('current_installments', '>=', $income->current_installments)
             ->delete();
+
+        // Receita fixa: "este e os futuros" encerra a série — sem o molde, o gerador diário não cria mais meses.
+        if ($income->is_fixed) {
+            FixedIncome::where('recurrence_group_id', $income->recurrence_group_id)->delete();
+        }
 
         $this->cancelDelete();
     }
@@ -208,6 +245,13 @@ new class extends Component
                 <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
             @endforeach
         </flux:select>
+
+        <flux:select wire:model.live="kindFilter" label="Tipo">
+            <flux:select.option value="">Todos</flux:select.option>
+            <flux:select.option value="unica">Única</flux:select.option>
+            <flux:select.option value="recorrente">Recorrente</flux:select.option>
+            <flux:select.option value="fixa">Fixa</flux:select.option>
+        </flux:select>
     </div>
 
     <div class="overflow-x-auto">
@@ -218,7 +262,7 @@ new class extends Component
                 <th class="px-6 py-3">Categoria</th>
                 <th class="px-6 py-3">Valor</th>
                 <th class="px-6 py-3">Data</th>
-                <th class="px-6 py-3">Recorrente?</th>
+                <th class="px-6 py-3">Tipo</th>
                 <th class="px-6 py-3">Ações</th>
             </tr>
             </thead>
@@ -229,7 +273,17 @@ new class extends Component
                     <td class="px-6 py-4">{{ $income->category?->name ?? '—' }}</td>
                     <td class="px-6 py-4">R$ {{ number_format($income->value, 2, ',', '.') }}</td>
                     <td class="px-6 py-4">{{ $income->date->format('d/m/Y') }}</td>
-                    <td class="px-6 py-4">{{ $income->is_recurrent ? 'Sim' : 'Não' }}</td>
+                    <td class="px-6 py-4">
+                        @php($kindIcon = match ($income->kindLabel()) {
+                            'Fixa' => 'arrow-path',
+                            'Recorrente' => 'queue-list',
+                            default => 'document-text',
+                        })
+                        <span class="inline-flex items-center gap-1 whitespace-nowrap">
+                            <flux:icon :icon="$kindIcon" variant="micro" class="text-muted-foreground" />
+                            {{ $income->kindLabel() }}
+                        </span>
+                    </td>
                     <td class="px-6 py-4">
                         <div class="flex gap-3">
                             <button type="button" wire:click="editIncome({{ $income->id }})" class="text-blue-600 hover:underline dark:text-blue-400">
@@ -275,6 +329,11 @@ new class extends Component
                         </flux:select>
                     </div>
 
+                    @if ($editingIsFixed)
+                        <flux:checkbox wire:model="edit_apply_to_future"
+                                       label="Aplicar descrição, valor e categoria também aos próximos lançamentos desta entrada fixa" />
+                    @endif
+
                     <div class="flex justify-end gap-2 pt-2">
                         <flux:button type="button" variant="ghost" wire:click="cancelEdit">Cancelar</flux:button>
                         <flux:button type="submit" variant="primary">Salvar Alterações</flux:button>
@@ -294,6 +353,9 @@ new class extends Component
                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
                         Essa entrada faz parte de uma recorrência. Você quer excluir apenas este lançamento,
                         ou este e todos os futuros?
+                        @if ($deletingIsFixed)
+                            Por ser uma entrada fixa, excluir "este e os futuros" encerra a recorrência — nenhum mês novo será lançado.
+                        @endif
                     </p>
                     <div class="flex flex-col gap-2">
                         <flux:button variant="danger" wire:click="deleteOnlyThis">Excluir somente este lançamento</flux:button>

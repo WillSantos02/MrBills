@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\FixedIncome;
 use App\Models\Income;
 use App\Models\IncomeCategory;
 use Illuminate\Validation\Rule;
@@ -11,8 +12,9 @@ new class extends Component
     public string $value = '';
     public string $date = '';
     public ?int $income_category_id = null;
-    public bool $is_recurrent = false;
-    public int $total_installments = 1;
+    /** unica | recorrente (n meses) | fixa (sem fim) */
+    public string $kind = 'unica';
+    public int $total_installments = 2;
 
     public function with(): array
     {
@@ -33,9 +35,10 @@ new class extends Component
                 'nullable',
                 Rule::exists('income_categories', 'id')->where(fn ($q) => $q->whereIn('user_id', auth()->user()->familyGroupUserIds())),
             ],
+            'kind' => ['required', Rule::in(['unica', 'recorrente', 'fixa'])],
         ];
 
-        if ($this->is_recurrent) {
+        if ($this->kind === 'recorrente') {
             $rules['total_installments'] = 'required|integer|min:2|max:360';
         }
 
@@ -49,20 +52,19 @@ new class extends Component
             'income_category_id' => $this->income_category_id,
         ];
 
-        if ($this->is_recurrent) {
-            Income::createRecurrent(array_merge($data, [
+        match ($this->kind) {
+            'recorrente' => Income::createRecurrent(array_merge($data, [
                 'total_installments' => $this->total_installments,
-            ]));
-        } else {
-            Income::create(array_merge($data, [
+            ])),
+            'fixa' => FixedIncome::start($data),
+            default => Income::create(array_merge($data, [
                 'is_recurrent' => false,
                 'total_installments' => 1,
                 'current_installments' => 1,
-            ]));
-        }
+            ])),
+        };
 
-        $this->reset(['description', 'value', 'date', 'income_category_id', 'is_recurrent']);
-        $this->total_installments = 1;
+        $this->reset(['description', 'value', 'date', 'income_category_id', 'kind', 'total_installments']);
 
         $this->dispatch('income-created');
     }
@@ -73,6 +75,14 @@ new class extends Component
     <h3 class="text-lg font-bold text-foreground mb-4">Nova Entrada</h3>
 
     <form wire:submit="save" class="space-y-4">
+        <div class="md:w-1/2">
+            <flux:radio.group wire:model.live="kind" label="Tipo de entrada" variant="segmented">
+                <flux:radio value="unica" label="Única" icon="document-text" />
+                <flux:radio value="recorrente" label="Recorrente" icon="queue-list" />
+                <flux:radio value="fixa" label="Fixa" icon="arrow-path" />
+            </flux:radio.group>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <flux:input wire:model="description" label="Descrição" placeholder="Ex: Salário, Freelance..." />
             <flux:input wire:model="value" label="Valor" type="number" step="0.01" placeholder="0,00" />
@@ -89,11 +99,7 @@ new class extends Component
             </flux:select>
         </div>
 
-        <div>
-            <flux:checkbox wire:model.live="is_recurrent" label="Entrada recorrente (ex: salário mensal)?" />
-        </div>
-
-        @if ($is_recurrent)
+        @if ($kind === 'recorrente')
             <div class="md:w-1/2">
                 <flux:input
                     wire:model="total_installments"
@@ -106,6 +112,12 @@ new class extends Component
                     Todos os lançamentos serão criados agora, com repetição mensal a partir da data informada.
                 </p>
             </div>
+        @elseif ($kind === 'fixa')
+            <p class="text-xs text-muted-foreground">
+                Entrada que se repete todo mês, sem data para acabar (salário, aluguel recebido...). Os próximos
+                {{ \App\Models\FixedIncome::HORIZON_MONTHS }} meses ficam sempre lançados; para encerrar, exclua um
+                lançamento escolhendo "este e os futuros".
+            </p>
         @endif
 
         <div>

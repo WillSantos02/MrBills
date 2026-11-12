@@ -24,6 +24,8 @@ class Bill extends Model
         'due_date',
         'actual_due_date',
         'is_recurrent',
+        'is_spot',
+        'is_fixed',
         'total_installments',
         'current_installments',
         'recurrence_group_id',
@@ -38,6 +40,8 @@ class Bill extends Model
         'actual_due_date' => 'date',
         'last_due_soon_notified_at' => 'date',
         'is_recurrent' => 'boolean',
+        'is_spot' => 'boolean',
+        'is_fixed' => 'boolean',
         'status' => BillStatus::class,
     ];
 
@@ -117,11 +121,36 @@ class Bill extends Model
 
     public function getDisplayDescriptionAttribute(): string
     {
-        if (! $this->is_recurrent) {
+        // Conta fixa não tem "n/total" — não há fim. Só parcelada mostra o contador.
+        if (! $this->is_recurrent || $this->is_fixed) {
             return $this->description;
         }
 
         return "{$this->description} - {$this->current_installments}/{$this->total_installments}";
+    }
+
+    /**
+     * Molde da conta fixa da qual esta ocorrência faz parte (null se a série foi encerrada ou se não é fixa).
+     *
+     * @return BelongsTo<FixedBill, $this>
+     */
+    public function fixedBill(): BelongsTo
+    {
+        return $this->belongsTo(FixedBill::class, 'recurrence_group_id', 'recurrence_group_id');
+    }
+
+    /**
+     * Rótulo do tipo de lançamento, usado na coluna "Tipo" de Despesas.
+     */
+    public function kindLabel(): string
+    {
+        return match (true) {
+            $this->isInvoice() => 'Fatura',
+            $this->is_fixed => 'Fixa',
+            $this->is_recurrent => 'Parcelada',
+            $this->is_spot => 'Pontual',
+            default => 'Única',
+        };
     }
 
     /**
@@ -169,7 +198,8 @@ class Bill extends Model
         static::saving(function (Bill $bill) {
             $actualDate = Carbon::parse($bill->due_date);
 
-            if ($actualDate->isWeekend()) {
+            // Gasto pontual já aconteceu nessa data (pago na hora) — não é vencimento, não rola pra segunda.
+            if ($actualDate->isWeekend() && ! $bill->is_spot) {
                 $actualDate->next(Carbon::MONDAY);
             }
 

@@ -3,6 +3,7 @@
 use App\Enums\BillStatus;
 use App\Models\Bill;
 use App\Models\Category;
+use App\Models\FixedBill;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
@@ -19,6 +20,7 @@ new class extends Component
     /** @var array<int, int|string> */
     public array $statusFilter = [];
     public string $categoryFilter = '';
+    public string $kindFilter = ''; // '' | unica | pontual | parcelada | fixa | fatura
 
     // Ordenação
     public string $sortColumn = 'actual_due_date';
@@ -36,10 +38,13 @@ new class extends Component
     public ?int $edit_category_id = null;
     public int $edit_status = 1;
     public bool $editingIsInvoice = false;
+    public bool $editingIsFixed = false;
+    public bool $edit_apply_to_future = false;
 
     // Exclusão
     public ?int $deletingBillId = null;
     public bool $deletingIsRecurrent = false;
+    public bool $deletingIsFixed = false;
 
     public function mount(): void
     {
@@ -124,6 +129,18 @@ new class extends Component
         });
     }
 
+    protected function applyKindFilter(Builder $query): void
+    {
+        match ($this->kindFilter) {
+            'fatura' => $query->whereNotNull('credit_card_id'),
+            'fixa' => $query->where('is_fixed', true),
+            'parcelada' => $query->where('is_recurrent', true)->where('is_fixed', false),
+            'pontual' => $query->where('is_spot', true),
+            'unica' => $query->where('is_recurrent', false)->where('is_spot', false)->whereNull('credit_card_id'),
+            default => null,
+        };
+    }
+
     protected function applySorting(Builder $query): void
     {
         $direction = $this->sortDirection === 'desc' ? 'desc' : 'asc';
@@ -176,6 +193,8 @@ new class extends Component
             $query->where('category_id', $this->categoryFilter);
         }
 
+        $this->applyKindFilter($query);
+
         $this->applySorting($query);
 
         $selectedIds = array_map('intval', $this->selectedBills);
@@ -198,7 +217,7 @@ new class extends Component
                 ['key' => 'value', 'label' => 'Valor'],
                 ['key' => 'due_date', 'label' => 'Venc. Original'],
                 ['key' => 'actual_due_date', 'label' => 'Venc. Real (Útil)'],
-                ['key' => 'is_recurrent', 'label' => 'Recorrente?'],
+                ['key' => 'is_recurrent', 'label' => 'Tipo'],
                 ['key' => 'status', 'label' => 'Status'],
             ],
         ];
@@ -220,6 +239,8 @@ new class extends Component
         $this->edit_category_id = $bill->category_id;
         $this->edit_status = $bill->status->value;
         $this->editingIsInvoice = $bill->isInvoice();
+        $this->editingIsFixed = $bill->is_fixed;
+        $this->edit_apply_to_future = false;
     }
 
     public function cancelEdit(): void
@@ -232,6 +253,8 @@ new class extends Component
             'edit_category_id',
             'edit_status',
             'editingIsInvoice',
+            'editingIsFixed',
+            'edit_apply_to_future',
         ]);
     }
 
@@ -271,6 +294,23 @@ new class extends Component
             'status' => $this->edit_status,
         ]);
 
+        // Conta fixa: reajuste (aluguel novo, troca de categoria...) vale para as próximas ocorrências ainda
+        // pendentes e para o molde, que gera os meses seguintes.
+        if ($bill->is_fixed && $this->edit_apply_to_future) {
+            $changes = [
+                'description' => $this->edit_description,
+                'value' => $this->edit_value,
+                'category_id' => $this->edit_category_id,
+            ];
+
+            Bill::where('recurrence_group_id', $bill->recurrence_group_id)
+                ->where('current_installments', '>', $bill->current_installments)
+                ->where('status', BillStatus::Pendente->value)
+                ->update($changes);
+
+            FixedBill::where('recurrence_group_id', $bill->recurrence_group_id)->update($changes);
+        }
+
         $this->cancelEdit();
     }
 
@@ -283,11 +323,12 @@ new class extends Component
 
         $this->deletingBillId = $bill->id;
         $this->deletingIsRecurrent = filled($bill->recurrence_group_id);
+        $this->deletingIsFixed = $bill->is_fixed;
     }
 
     public function cancelDelete(): void
     {
-        $this->reset(['deletingBillId', 'deletingIsRecurrent']);
+        $this->reset(['deletingBillId', 'deletingIsRecurrent', 'deletingIsFixed']);
     }
 
     public function deleteOnlyThis(): void
@@ -310,6 +351,11 @@ new class extends Component
             ->where('recurrence_group_id', $bill->recurrence_group_id)
             ->where('current_installments', '>=', $bill->current_installments)
             ->delete();
+
+        // Conta fixa: "esta e as futuras" encerra a série — sem o molde, o gerador diário não cria mais meses.
+        if ($bill->is_fixed) {
+            FixedBill::where('recurrence_group_id', $bill->recurrence_group_id)->delete();
+        }
 
         $this->cancelDelete();
     }
@@ -350,6 +396,15 @@ new class extends Component
             @foreach ($categories as $category)
                 <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
             @endforeach
+        </flux:select>
+
+        <flux:select wire:model.live="kindFilter" label="Tipo">
+            <flux:select.option value="">Todos</flux:select.option>
+            <flux:select.option value="unica">Única</flux:select.option>
+            <flux:select.option value="pontual">Gasto pontual</flux:select.option>
+            <flux:select.option value="parcelada">Parcelada</flux:select.option>
+            <flux:select.option value="fixa">Fixa</flux:select.option>
+            <flux:select.option value="fatura">Fatura de cartão</flux:select.option>
         </flux:select>
     </div>
 
@@ -408,7 +463,19 @@ new class extends Component
                     <td class="px-6 py-4">R$ {{ number_format($bill->value, 2, ',', '.') }}</td>
                     <td class="px-6 py-4">{{ $bill->due_date->format('d/m/Y') }}</td>
                     <td class="px-6 py-4">{{ $bill->actual_due_date->format('d/m/Y') }}</td>
-                    <td class="px-6 py-4">{{ $bill->is_recurrent ? 'Sim' : 'Não' }}</td>
+                    <td class="px-6 py-4">
+                        @php($kindIcon = match ($bill->kindLabel()) {
+                            'Fatura' => 'credit-card',
+                            'Fixa' => 'arrow-path',
+                            'Parcelada' => 'queue-list',
+                            'Pontual' => 'bolt',
+                            default => 'document-text',
+                        })
+                        <span class="inline-flex items-center gap-1 whitespace-nowrap" title="{{ $bill->kindLabel() }}">
+                            <flux:icon :icon="$kindIcon" variant="micro" class="text-muted-foreground" />
+                            {{ $bill->kindLabel() }}
+                        </span>
+                    </td>
                     <td class="px-6 py-4">
                         <span class="px-2 py-1 text-xs rounded-full {{ $bill->effective_status->badgeClasses() }}">
                             {{ $bill->effective_status->label() }}
@@ -472,6 +539,11 @@ new class extends Component
                         </div>
                     @endif
 
+                    @if ($editingIsFixed)
+                        <flux:checkbox wire:model="edit_apply_to_future"
+                                       label="Aplicar descrição, valor e categoria também às próximas ocorrências desta conta fixa" />
+                    @endif
+
                     <flux:select wire:model="edit_status" label="Status">
                         @foreach ($statuses as $status)
                             <flux:select.option value="{{ $status->value }}">{{ $status->label() }}</flux:select.option>
@@ -497,6 +569,9 @@ new class extends Component
                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
                         Essa conta faz parte de uma recorrência. Você quer excluir apenas esta parcela,
                         ou esta e todas as parcelas futuras?
+                        @if ($deletingIsFixed)
+                            Por ser uma conta fixa, excluir "esta e as futuras" encerra a recorrência — nenhum mês novo será lançado.
+                        @endif
                     </p>
                     <div class="flex flex-col gap-2">
                         <flux:button variant="danger" wire:click="deleteOnlyThis">Excluir somente esta parcela</flux:button>

@@ -22,6 +22,7 @@ class Income extends Model
         'value',
         'date',
         'is_recurrent',
+        'is_fixed',
         'total_installments',
         'current_installments',
         'recurrence_group_id',
@@ -30,6 +31,7 @@ class Income extends Model
     protected $casts = [
         'date' => 'date',
         'is_recurrent' => 'boolean',
+        'is_fixed' => 'boolean',
     ];
 
     /**
@@ -64,11 +66,24 @@ class Income extends Model
      */
     public function getDisplayDescriptionAttribute(): string
     {
-        if (! $this->is_recurrent) {
+        // Receita fixa não tem "n/total" — não há fim.
+        if (! $this->is_recurrent || $this->is_fixed) {
             return $this->description;
         }
 
         return "{$this->description} - {$this->current_installments}/{$this->total_installments}";
+    }
+
+    /**
+     * Rótulo do tipo de lançamento, usado na coluna "Tipo" de Receitas.
+     */
+    public function kindLabel(): string
+    {
+        return match (true) {
+            $this->is_fixed => 'Fixa',
+            $this->is_recurrent => 'Recorrente',
+            default => 'Única',
+        };
     }
 
     /**
